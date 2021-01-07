@@ -14,6 +14,8 @@ namespace LightMessager
      * links: 
      * https://www.rabbitmq.com/dotnet-api-guide.html
      * https://www.rabbitmq.com/queues.html
+     * https://www.rabbitmq.com/channels.html
+     * https://www.rabbitmq.com/reliability.html
      * https://www.rabbitmq.com/confirms.html
      * https://stackoverflow.com/questions/4444208/delayed-message-in-rabbitmq
     */
@@ -47,6 +49,8 @@ namespace LightMessager
             InitConnection(configuration);
             InitAsyncConnection(configuration);
             InitChannelPool(configuration);
+            InitMessageTracker(configuration);
+            InitOther(configuration);
         }
 
         public RabbitMqHub(IConfigurationRoot configuration)
@@ -57,6 +61,8 @@ namespace LightMessager
             InitConnection(configuration);
             InitAsyncConnection(configuration);
             InitChannelPool(configuration);
+            InitMessageTracker(configuration);
+            InitOther(configuration);
         }
 
         private void InitConnection(IConfigurationRoot configuration)
@@ -96,6 +102,11 @@ namespace LightMessager
                 cpu, cpu * 2);
         }
 
+        private void InitMessageTracker(IConfigurationRoot configuration)
+        {
+            _tracker = new InMemoryTracker();
+        }
+
         private void InitOther(IConfigurationRoot configuration)
         {
             _max_republish = 2;
@@ -116,7 +127,10 @@ namespace LightMessager
             if (model != null)
             {
                 if (model.State == MessageState.Created && model.Republish < _max_republish)
+                {
+                    model.Republish += 1;
                     return true;
+                }
             }
             else
             {

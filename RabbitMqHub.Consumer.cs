@@ -9,14 +9,14 @@ namespace LightMessager
 {
     public sealed partial class RabbitMqHub
     {
-        public void RegisterHandler<TMessage, THandler>(bool asyncConsume = false)
+        public void RegisterHandler<TMessage, THandler>(bool asyncConsumer = false)
             where THandler : BaseMessageHandler<TMessage>
             where TMessage : BaseMessage
         {
             var handler = Activator.CreateInstance(typeof(THandler), _tracker) as THandler;
             IModel channel = null;
             IBasicConsumer consumer = null;
-            if (!asyncConsume)
+            if (!asyncConsumer)
             {
                 channel = _connection.CreateModel();
                 consumer = SetupConsumer<TMessage, THandler>(channel, handler);
@@ -37,14 +37,14 @@ namespace LightMessager
             channel.BasicConsume(info.Queue, false, consumer);
         }
 
-        public void RegisterHandler<TMessage, THandler>(string subscriber, string[] subscribeKeys, bool asyncConsume = false)
+        public void RegisterHandler<TMessage, THandler>(string subscriber, string[] subscribeKeys, bool asyncConsumer = false)
             where THandler : BaseMessageHandler<TMessage>
             where TMessage : BaseMessage
         {
             var handler = Activator.CreateInstance(typeof(THandler), _tracker) as THandler;
             IModel channel = null;
             IBasicConsumer consumer = null;
-            if (!asyncConsume)
+            if (!asyncConsumer)
             {
                 channel = _connection.CreateModel();
                 consumer = SetupConsumer<TMessage, THandler>(channel, handler);
@@ -60,14 +60,14 @@ namespace LightMessager
             channel.BasicConsume(info.Queue, false, consumer);
         }
 
-        public void RegisterHandler<TMessage, THandler>(string subscriber, bool asyncConsume = false)
+        public void RegisterHandler<TMessage, THandler>(string subscriber, bool asyncConsumer = false)
             where THandler : BaseMessageHandler<TMessage>
             where TMessage : BaseMessage
         {
             var handler = Activator.CreateInstance(typeof(THandler), _tracker) as THandler;
             IModel channel = null;
             IBasicConsumer consumer = null;
-            if (!asyncConsume)
+            if (!asyncConsumer)
             {
                 channel = _connection.CreateModel();
                 consumer = SetupConsumer<TMessage, THandler>(channel, handler);
@@ -95,7 +95,6 @@ namespace LightMessager
             consumer.Received += (model, ea) =>
             {
                 // 我们需要这样子来利用短路，大多数情况下耗时的GetModel都不会被调用到
-                // TODO：如果右侧换成msg.Requeue>0？
                 if (ea.Redelivered && _tracker.GetMessage(ea.BasicProperties.MessageId) != null)
                 {
                     // 之前一定有处理过
@@ -106,23 +105,18 @@ namespace LightMessager
                     }
                 }
 
-                // 之前一定没有处理过（注意Redelivered为true但track=null也会落到这里来）；
-                // 当然，如果handler是幂等的那么也会走到这里来
+                // 两种情况可以断定没有处理过该条消息：
+                // 1. Redelivered = false
+                // 2. Redelivered = true && track = null
+                // 需要说明的是在当前库实现中track=null是不可能的，track被当作单点永久存储在使用，所有消息发送
+                // 之前一定会进行登记；
+                // 最后，如果handler是幂等的那么也会走到这里来
                 var json = Encoding.UTF8.GetString(ea.Body);
                 var msg = JsonConvert.DeserializeObject<TMessage>(json);
-                handler.Handle(msg);
-
-                if (msg.NeedRequeue)
-                {
-                    channel.BasicNack(ea.DeliveryTag, false, true);
-                }
+                if (handler.Handle(msg))
+                    channel.BasicAck(ea.DeliveryTag, false);
                 else
-                {
-                    if (handler.Counter % _prefetch_count == 0)
-                    {
-                        channel.BasicAck(ea.DeliveryTag, true);
-                    }
-                }
+                    channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
             };
 
             return consumer;
@@ -147,19 +141,10 @@ namespace LightMessager
 
                 var json = Encoding.UTF8.GetString(ea.Body);
                 var msg = JsonConvert.DeserializeObject<TMessage>(json);
-                await handler.HandleAsync(msg);
-
-                if (msg.NeedRequeue)
-                {
-                    channel.BasicNack(ea.DeliveryTag, false, true);
-                }
+                if (await handler.HandleAsync(msg))
+                    channel.BasicAck(ea.DeliveryTag, false);
                 else
-                {
-                    if (handler.Counter % _prefetch_count == 0)
-                    {
-                        channel.BasicAck(ea.DeliveryTag, true);
-                    }
-                }
+                    channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
             };
 
             return consumer;

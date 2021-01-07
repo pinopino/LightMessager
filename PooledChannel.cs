@@ -51,10 +51,10 @@ namespace LightMessager
 
         internal ulong PublishAsync(BaseMessage message, string exchange, string routeKey)
         {
-            var lastSeq = _innerChannel.NextPublishSeqNo;
-            _tracker.TrackMessage(lastSeq, message.MsgId);
+            var sequence = _innerChannel.NextPublishSeqNo;
+            _tracker.TrackMessage(sequence, message.MsgId);
             InnerPublish(message, exchange, routeKey);
-            return lastSeq;
+            return sequence;
         }
 
         private void InnerPublish(BaseMessage message, string exchange, string routeKey)
@@ -91,7 +91,7 @@ namespace LightMessager
 
         internal Task WaitForConfirmsAsync(ulong deliveryTag, string msgId)
         {
-            return _tracker.SetDeliveryTagForAsync(deliveryTag, msgId);
+            return _tracker.RegisterMapForAsync(deliveryTag, msgId);
         }
 
         // 说明：broker正常接受到消息，会触发该ack事件
@@ -108,11 +108,11 @@ namespace LightMessager
             if (e.Multiple)
                 _tracker.SetMultipleStatus(e.DeliveryTag, MessageState.Confirmed);
             else
-                _tracker.SetStatus(e.DeliveryTag, MessageState.Confirmed, remark: string.Empty);
+                _tracker.SetStatus(e.DeliveryTag, MessageState.Confirmed);
         }
 
         // nack的时候通常broker那里可能出了什么状况，log一波（暂时不考虑重试了）
-        // 消息的状态置为终结态Error：4
+        // 消息的状态置为终结态Error
         private void Channel_BasicNacks(object sender, BasicNackEventArgs e)
         {
             if (e.Multiple)
@@ -122,7 +122,7 @@ namespace LightMessager
         }
 
         // 说明：return类似于nack，不同在于return通常代表着unroutable，
-        // 所以log一下但并不会重试，消息的状态也直接置为终结态Error_Unroutable：5
+        // 所以log一下但并不会重试，消息的状态也直接置为终结态Error_Unroutable
         private void Channel_BasicReturn(object sender, BasicReturnEventArgs e)
         {
             // TODO：return之后还会再接一次ack，消息本地消息的状态被错误重置
@@ -132,6 +132,7 @@ namespace LightMessager
 
         private void Channel_ModelShutdown(object sender, ShutdownEventArgs e)
         {
+            // link: https://www.rabbitmq.com/channels.html
             _logger.Warn($"Channel Shutdown，ReplyCode：{e.ReplyCode}，ReplyText：{e.ReplyText}");
         }
 

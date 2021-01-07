@@ -6,30 +6,29 @@ namespace LightMessager.Model
     [Flags]
     public enum MessageState
     {
-        None = 0,
         /// <summary>
-        /// Created: 1
+        /// Created: 0
         /// </summary>
-        Created = 1 << 0,
+        Created = 0,
         /// <summary>
-        /// Confirmed: 2
+        /// Error: 1
         /// </summary>
-        Confirmed = 1 << 1,
+        Error = 1 << 0,
         /// <summary>
-        /// Consumed: 4
+        /// Error_Unroutable: 2
         /// </summary>
-        Consumed = 1 << 2,
+        Error_Unroutable = 1 << 1,
         /// <summary>
-        /// Error: 8
+        /// Error_NoExchangeFound: 4
         /// </summary>
-        Error = 1 << 3,
+        Error_NoExchangeFound = 1 << 2,
         /// <summary>
-        /// Error_Unroutable: 16
+        /// Confirmed: 8
         /// </summary>
-        Error_Unroutable = 1 << 4,
+        Confirmed = 1 << 3,
         /// <summary>
-        /// Error_NoExchangeFound: 32
+        /// Consumed: 16
         /// </summary>
-        Error_NoExchangeFound = 1 << 5
+        Consumed = 1 << 4
     }
 }

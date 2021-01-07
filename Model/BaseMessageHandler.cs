@@ -18,9 +18,8 @@ namespace LightMessager.Model
         private static Logger _logger = LogManager.GetLogger("MessageHandler");
 
         public bool Idempotent { get { return _idempotent; } }
-        internal long Counter;
 
-        protected BaseMessageHandler(BaseMessageTracker tracker, bool idempotent = false)
+        protected BaseMessageHandler(BaseMessageTracker tracker, bool idempotent = true)
         {
             _maxRetry = 1; // 按需修改
             _maxRequeue = 2;
@@ -29,13 +28,13 @@ namespace LightMessager.Model
             _tracker = tracker;
         }
 
-        public void Handle(TMessage message)
+        public bool Handle(TMessage message)
         {
             try
             {
                 // 执行DoHandle可能会发生异常，如果是我们特定的异常则进行重试操作
                 // 否则直接抛出异常
-                RetryHelper.Retry(() => DoHandle(message), _idempotent ? _maxRetry : 1, _backoffMs, p =>
+                var ret = RetryHelper.Retry(() => DoHandle(message), _idempotent ? _maxRetry : 1, _backoffMs, p =>
                 {
                     var ex = p as Exception<LightMessagerExceptionArgs>;
                     if (ex != null)
@@ -44,23 +43,27 @@ namespace LightMessager.Model
                     return false;
                 });
 
-                MarkConsumed(message);
+                if (ret)
+                    MarkConsumed(message);
+                return ret;
             }
             catch (Exception ex)
             {
                 _logger.Debug("未知异常：" + ex.Message + "；堆栈：" + ex.StackTrace);
                 // 说明：_maxRetry次之后还需要判该条消息requeue次数是否超过允
                 // 许的最大值：如果是，不再做任何进一步尝试了，log一波；否则
-                // 设置NeedRequeue为true准备重新入队列定
+                // 设置NeedRequeue为true准备重新入队列
                 DoRequeue(message);
             }
+            return false;
         }
 
-        public async Task HandleAsync(TMessage message)
+        public async Task<bool> HandleAsync(TMessage message)
         {
             try
             {
-                await RetryHelper.RetryAsync(() => DoHandle(message), _idempotent ? _maxRetry : 1, _backoffMs, p =>
+                var ret = await RetryHelper.RetryAsync(async () => await DoHandleAsync(message),
+                    _idempotent ? _maxRetry : 1, _backoffMs, p =>
                 {
                     var ex = p as Exception<LightMessagerExceptionArgs>;
                     if (ex != null)
@@ -69,16 +72,28 @@ namespace LightMessager.Model
                     return false;
                 });
 
-                MarkConsumed(message);
+                if (ret)
+                    MarkConsumed(message);
+
+                return ret;
             }
             catch (Exception ex)
             {
                 _logger.Debug("未知异常：" + ex.Message + "；堆栈：" + ex.StackTrace);
                 DoRequeue(message);
             }
+            return false;
         }
 
-        protected abstract void DoHandle(TMessage message);
+        protected virtual bool DoHandle(TMessage message)
+        {
+            throw new NotImplementedException();
+        }
+
+        protected virtual Task<bool> DoHandleAsync(TMessage message)
+        {
+            throw new NotImplementedException();
+        }
 
         private void DoRequeue(TMessage message)
         {
@@ -91,14 +106,13 @@ namespace LightMessager.Model
             }
             else
             {
-                _logger.Debug("消息requeue已达上限，不再尝试");
+                _logger.Debug("消息处理端不支持幂等或requeue已达上限，不再尝试");
                 _tracker.SetStatus(message.MsgId, newStatus: MessageState.Error, oldStatus: MessageState.Confirmed);
             }
         }
 
         private void MarkConsumed(TMessage message)
         {
-            Counter++;
             _tracker.SetStatus(message.MsgId, newStatus: MessageState.Consumed, oldStatus: MessageState.Confirmed);
         }
     }

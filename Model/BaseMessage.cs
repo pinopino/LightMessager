@@ -11,7 +11,7 @@ namespace LightMessager.Model
         public string Content { set; get; }
 
         /// <summary>
-        /// 1 created、2 persistent、3 consumed、4 error、5 error_unroutable
+        /// 0 created、1 error、2 error_unroutable、4 error_noexchangefound、8 confirmed、16 consumed
         /// </summary>
         public MessageState State { set; get; }
 
