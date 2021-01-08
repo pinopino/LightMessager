@@ -48,8 +48,8 @@ namespace LightMessager
             var configuration = builder.Build();
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitChannelPool(configuration);
             InitMessageTracker(configuration);
+            InitChannelPool(configuration);
             InitOther(configuration);
         }
 
@@ -60,8 +60,8 @@ namespace LightMessager
 
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitChannelPool(configuration);
             InitMessageTracker(configuration);
+            InitChannelPool(configuration);
             InitOther(configuration);
         }
 
@@ -112,6 +112,7 @@ namespace LightMessager
             _max_republish = 2;
             _max_requeue = 2;
             _min_delaysend = 5;
+            _batch_size = 300;
             _prefetch_count = 200;
             _send_queue = new ConcurrentDictionary<string, QueueInfo>();
             _route_queue = new ConcurrentDictionary<string, QueueInfo>();
@@ -332,7 +333,7 @@ namespace LightMessager
         {
             var info = _publish_queue.GetOrAdd(key, t => new QueueInfo
             {
-                Exchange = (typeName ?? key) + ".exchange",
+                Exchange = (typeName ?? key) + ".exchange.fanout",
                 Queue = string.Empty
             });
 

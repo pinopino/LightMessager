@@ -160,7 +160,7 @@ namespace LightMessager
                     // 池化策略时一种方式是捕获该异常并且创建一个新的channel以补充池中可用的channle；
                     if (_innerChannel.IsClosed)
                     {
-                        _tracker.Init();
+                        _tracker.Reset();
                         _innerChannel = _connection.CreateModel();
                         InitChannel();
                         _pool.Put(this);

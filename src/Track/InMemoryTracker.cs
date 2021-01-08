@@ -10,8 +10,8 @@ namespace LightMessager.Track
 
         public InMemoryTracker()
         {
-            _list = new List<BaseMessage>();
             _lockObj = new object();
+            _list = new List<BaseMessage>();
         }
 
         public override bool AddMessage(BaseMessage message)

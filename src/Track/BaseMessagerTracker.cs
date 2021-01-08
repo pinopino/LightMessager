@@ -10,12 +10,17 @@ namespace LightMessager.Track
     {
         // 一个用于同步，一个用于异步
         protected ConcurrentDictionary<ulong, string> _unconfirm; // <DeliveryTag, MsgId>
-        protected ConcurrentDictionary<ulong, TaskCompletionSource<int>> _awaitingConfirms;
+        protected ConcurrentDictionary<ulong, TaskCompletionSource<int>> _awaitingCheckpoint;
 
-        public void Init()
+        public BaseMessageTracker()
+        {
+            Reset();
+        }
+
+        public void Reset()
         {
             _unconfirm = new ConcurrentDictionary<ulong, string>();
-            _awaitingConfirms = new ConcurrentDictionary<ulong, TaskCompletionSource<int>>();
+            _awaitingCheckpoint = new ConcurrentDictionary<ulong, TaskCompletionSource<int>>();
         }
 
         public abstract bool AddMessage(BaseMessage message);
@@ -61,7 +66,7 @@ namespace LightMessager.Track
         internal Task RegisterMapForAsync(ulong deliveryTag, string messageId)
         {
             var tcs = new TaskCompletionSource<int>(messageId);
-            _awaitingConfirms.TryAdd(deliveryTag, tcs);
+            _awaitingCheckpoint.TryAdd(deliveryTag, tcs);
             return tcs.Task;
         }
     }

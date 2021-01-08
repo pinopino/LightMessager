@@ -3,9 +3,9 @@ using System;
 
 namespace LightMessager.Model
 {
-    public class BaseMessage
+    public abstract class BaseMessage
     {
-        public string MsgId { set; get; }
+        public abstract string MsgId { get; }
 
         [JsonIgnore]
         public string Content { set; get; }

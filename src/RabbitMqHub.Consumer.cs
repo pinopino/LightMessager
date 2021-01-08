@@ -13,7 +13,8 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TMessage>
             where TMessage : BaseMessage
         {
-            var handler = Activator.CreateInstance(typeof(THandler), _tracker) as THandler;
+            var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.Tracker = _tracker;
             IModel channel = null;
             IBasicConsumer consumer = null;
             if (!asyncConsumer)
@@ -41,7 +42,8 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TMessage>
             where TMessage : BaseMessage
         {
-            var handler = Activator.CreateInstance(typeof(THandler), _tracker) as THandler;
+            var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.Tracker = _tracker;
             IModel channel = null;
             IBasicConsumer consumer = null;
             if (!asyncConsumer)
@@ -64,7 +66,8 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TMessage>
             where TMessage : BaseMessage
         {
-            var handler = Activator.CreateInstance(typeof(THandler), _tracker) as THandler;
+            var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.Tracker = _tracker;
             IModel channel = null;
             IBasicConsumer consumer = null;
             if (!asyncConsumer)

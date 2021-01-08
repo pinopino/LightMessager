@@ -13,19 +13,16 @@ namespace LightMessager.Model
         private int _maxRetry;
         private int _maxRequeue;
         private int _backoffMs;
-        private bool _idempotent;
-        private BaseMessageTracker _tracker;
         private static Logger _logger = LogManager.GetLogger("MessageHandler");
 
-        public bool Idempotent { get { return _idempotent; } }
+        internal BaseMessageTracker Tracker { set; get; }
+        public abstract bool Idempotent { get; }
 
-        protected BaseMessageHandler(BaseMessageTracker tracker, bool idempotent = true)
+        protected BaseMessageHandler()
         {
             _maxRetry = 1; // 按需修改
             _maxRequeue = 2;
             _backoffMs = 200;
-            _idempotent = idempotent;
-            _tracker = tracker;
         }
 
         public bool Handle(TMessage message)
@@ -34,7 +31,7 @@ namespace LightMessager.Model
             {
                 // 执行DoHandle可能会发生异常，如果是我们特定的异常则进行重试操作
                 // 否则直接抛出异常
-                var ret = RetryHelper.Retry(() => DoHandle(message), _idempotent ? _maxRetry : 1, _backoffMs, p =>
+                var ret = RetryHelper.Retry(() => DoHandle(message), Idempotent ? _maxRetry : 1, _backoffMs, p =>
                 {
                     var ex = p as Exception<LightMessagerExceptionArgs>;
                     if (ex != null)
@@ -63,7 +60,7 @@ namespace LightMessager.Model
             try
             {
                 var ret = await RetryHelper.RetryAsync(async () => await DoHandleAsync(message),
-                    _idempotent ? _maxRetry : 1, _backoffMs, p =>
+                    Idempotent ? _maxRetry : 1, _backoffMs, p =>
                 {
                     var ex = p as Exception<LightMessagerExceptionArgs>;
                     if (ex != null)
@@ -97,8 +94,8 @@ namespace LightMessager.Model
 
         private void DoRequeue(TMessage message)
         {
-            var model = _tracker.GetMessage(message.MsgId);
-            message.NeedRequeue = _idempotent && model.Requeue < _maxRequeue;
+            var model = Tracker.GetMessage(message.MsgId);
+            message.NeedRequeue = Idempotent && model.Requeue < _maxRequeue;
             if (message.NeedRequeue)
             {
                 message.Requeue += 1;
@@ -107,13 +104,13 @@ namespace LightMessager.Model
             else
             {
                 _logger.Debug("消息处理端不支持幂等或requeue已达上限，不再尝试");
-                _tracker.SetStatus(message.MsgId, newStatus: MessageState.Error, oldStatus: MessageState.Confirmed);
+                Tracker.SetStatus(message.MsgId, newStatus: MessageState.Error, oldStatus: MessageState.Confirmed);
             }
         }
 
         private void MarkConsumed(TMessage message)
         {
-            _tracker.SetStatus(message.MsgId, newStatus: MessageState.Consumed, oldStatus: MessageState.Confirmed);
+            Tracker.SetStatus(message.MsgId, newStatus: MessageState.Consumed, oldStatus: MessageState.Confirmed);
         }
     }
 }
