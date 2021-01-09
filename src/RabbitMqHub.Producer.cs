@@ -8,6 +8,14 @@ namespace LightMessager
 {
     public sealed partial class RabbitMqHub
     {
+        /// <summary>
+        /// 发送一条消息
+        /// </summary>
+        /// <typeparam name="TMessage">继承自BaseMessage</typeparam>
+        /// <param name="message">要发送的消息</param>
+        /// <param name="routeKey">可以是普通的字符串也可以是以.分割的字符串，后者将自动走topic方式发送</param>
+        /// <param name="delaySend">延迟发送</param>
+        /// <returns>true发送成功，反之失败</returns>
         public bool Send<TMessage>(TMessage message, string routeKey = "", int delaySend = 0)
             where TMessage : BaseMessage
         {
@@ -26,13 +34,25 @@ namespace LightMessager
                 }
                 else
                 {
-                    EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out QueueInfo info);
-                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
+                    QueueInfo info;
+                    if (routeKey.IndexOf('.') > 0)
+                        EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    else
+                        EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
                 }
                 return pooled.WaitForConfirms();
             }
         }
 
+        /// <summary>
+        /// 发送一批消息
+        /// </summary>
+        /// <typeparam name="TMessage">继承自BaseMessage</typeparam>
+        /// <param name="messages">要发送的消息</param>
+        /// <param name="routeKey">可以是普通的字符串也可以是以.分割的字符串，后者将自动走topic方式发送</param>
+        /// <param name="delaySend">延迟发送</param>
+        /// <returns>true发送成功，反之失败</returns>
         public bool Send<TMessage>(IEnumerable<TMessage> messages, string routeKey = "", int delaySend = 0)
             where TMessage : BaseMessage
         {
@@ -41,11 +61,18 @@ namespace LightMessager
 
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
-                QueueInfo info = null;
+                QueueInfo info;
                 if (string.IsNullOrEmpty(routeKey))
+                {
                     EnsureSendQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                }
                 else
-                    EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                {
+                    if (routeKey.IndexOf('.') > 0)
+                        EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    else
+                        EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                }
 
                 var counter = 0;
                 foreach (var message in messages)
@@ -60,7 +87,7 @@ namespace LightMessager
                     if (string.IsNullOrEmpty(routeKey))
                         pooled.Publish(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
                     else
-                        pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
+                        pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
 
                     if (counter % _batch_size == 0)
                         pooled.WaitForConfirms();
@@ -69,9 +96,20 @@ namespace LightMessager
             }
         }
 
-        public bool Send<TMessage>(IEnumerable<TMessage> messages, Func<TMessage, string> routeKeySelector, int delaySend = 0)
+        /// <summary>
+        /// 发送一批消息
+        /// </summary>
+        /// <typeparam name="TMessage">继承自BaseMessage</typeparam>
+        /// <param name="messages">要发送的消息</param>
+        /// <param name="routeKeySelector">从消息本身获取routekey的委托，返回值可以是普通的字符串也可以是以.分割的字符串，后者将自动走topic方式发送</param>
+        /// <param name="delaySend">延迟发送</param>
+        /// <returns>true发送成功，反之失败</returns>
+        private bool Send<TMessage>(IEnumerable<TMessage> messages, Func<TMessage, string> routeKeySelector, int delaySend = 0)
             where TMessage : BaseMessage
         {
+            // 可见性调整为private。
+            // 感觉这个方法挺危险的而实际干的事情其实是将上层业务可以做的事情也一并做了
+            // 造成库内部一定的复杂性，我还需要再多权衡下。下同
             if (routeKeySelector == null)
                 throw new ArgumentNullException("routeKeySelector");
 
@@ -80,9 +118,7 @@ namespace LightMessager
 
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
-                QueueInfo info = null;
-                EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
-
+                QueueInfo info;
                 var counter = 0;
                 foreach (var message in messages)
                 {
@@ -92,8 +128,19 @@ namespace LightMessager
                     if (!PreTrackMessage(message))
                         return false;
 
-                    var routekey = routeKeySelector(message);
-                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routekey);
+                    var routeKey = routeKeySelector(message);
+                    if (string.IsNullOrEmpty(routeKey))
+                    {
+                        EnsureSendQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    }
+                    else
+                    {
+                        if (routeKey.IndexOf('.') > 0)
+                            EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                        else
+                            EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    }
+                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
 
                     if (counter % _batch_size == 0)
                         pooled.WaitForConfirms();
@@ -121,8 +168,12 @@ namespace LightMessager
                 }
                 else
                 {
-                    EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out QueueInfo info);
-                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
+                    QueueInfo info;
+                    if (routeKey.IndexOf('.') > 0)
+                        EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    else
+                        EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
                 }
                 await pooled.WaitForConfirmsAsync(sequence, message.MsgId);
                 return true;
@@ -139,9 +190,16 @@ namespace LightMessager
             {
                 QueueInfo info = null;
                 if (string.IsNullOrEmpty(routeKey))
+                {
                     EnsureSendQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                }
                 else
-                    EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                {
+                    if (routeKey.IndexOf('.') > 0)
+                        EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    else
+                        EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                }
 
                 ulong sequence = 0;
                 TMessage lastMsg = null;
@@ -157,14 +215,14 @@ namespace LightMessager
                     if (string.IsNullOrEmpty(routeKey))
                         sequence = pooled.PublishAsync(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
                     else
-                        sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
+                        sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
                 }
                 await pooled.WaitForConfirmsAsync(sequence, lastMsg.MsgId);
                 return true;
             }
         }
 
-        public async Task<bool> SendAsync<TMessage>(IEnumerable<TMessage> messages, Func<TMessage, string> routeKeySelector, int delaySend = 0)
+        internal async Task<bool> SendAsync<TMessage>(IEnumerable<TMessage> messages, Func<TMessage, string> routeKeySelector, int delaySend = 0)
             where TMessage : BaseMessage
         {
             if (routeKeySelector == null)
@@ -176,8 +234,6 @@ namespace LightMessager
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
                 QueueInfo info = null;
-                EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
-
                 ulong sequence = 0;
                 TMessage lastMsg = null;
                 foreach (var message in messages)
@@ -189,8 +245,19 @@ namespace LightMessager
                         return false;
 
                     lastMsg = message;
-                    var routekey = routeKeySelector(message);
-                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routekey);
+                    var routeKey = routeKeySelector(message);
+                    if (string.IsNullOrEmpty(routeKey))
+                    {
+                        EnsureSendQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    }
+                    else
+                    {
+                        if (routeKey.IndexOf('.') > 0)
+                            EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                        else
+                            EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                    }
+                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
                 }
                 await pooled.WaitForConfirmsAsync(sequence, lastMsg.MsgId);
                 return true;

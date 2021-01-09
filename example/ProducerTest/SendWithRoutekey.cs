@@ -23,7 +23,7 @@ namespace ProducerTest
                     Quantity = 10,
                     CreatedTime = DateTime.Now
                 };
-                _mqHub.Send(order1, "order.computer");
+                _mqHub.Send(order1, "computer");
             }
 
             for (var i = 0; i < 3; i++)
@@ -36,7 +36,7 @@ namespace ProducerTest
                     Quantity = 20,
                     CreatedTime = DateTime.Now
                 };
-                _mqHub.Send(order2, "order.fruit");
+                _mqHub.Send(order2, "fruit");
             }
 
             for (var i = 0; i < 3; i++)
@@ -49,7 +49,7 @@ namespace ProducerTest
                     Quantity = 30,
                     CreatedTime = DateTime.Now
                 };
-                _mqHub.Send(order3, "order.snack");
+                _mqHub.Send(order3, "snack");
             }
         }
     }

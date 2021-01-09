@@ -24,8 +24,7 @@ namespace ProducerTest
             _mqHub.Send(order);
         }
 
-        // Round-robin dispatching（默认）
-        // 开多个消费端试试
+        // round-robin dispatching（默认）
         public void Run2()
         {
             for (var i = 0; i < 10; i++)
