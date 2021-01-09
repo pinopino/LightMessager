@@ -11,7 +11,7 @@ namespace ConsumerTest
         protected override bool DoHandle(OrderMessage message)
         {
             // 不需要做任何try...catch处理，库外层已经处理过了
-            Console.WriteLine("接收到消息: " + message);
+            Console.WriteLine("接收到消息: " + message + "，时间：" + DateTime.Now);
             return true;
         }
     }
@@ -24,7 +24,7 @@ namespace ConsumerTest
         protected override bool DoHandle(OrderMessage message)
         {
             // 不需要做任何try...catch处理，库外层已经处理过了
-            Console.WriteLine("我是sub1, 接收到消息: " + message);
+            Console.WriteLine("我是sub1, 接收到消息: " + message + "，时间：" + DateTime.Now);
             return true;
         }
     }
@@ -37,7 +37,7 @@ namespace ConsumerTest
         protected override bool DoHandle(OrderMessage message)
         {
             // 不需要做任何try...catch处理，库外层已经处理过了
-            Console.WriteLine("我是sub2，接收到消息: " + message);
+            Console.WriteLine("我是sub2，接收到消息: " + message + "，时间：" + DateTime.Now);
             return true;
         }
     }

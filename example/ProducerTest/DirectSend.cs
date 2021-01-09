@@ -40,5 +40,19 @@ namespace ProducerTest
                 _mqHub.Send(order);
             }
         }
+
+        public void Run3(int delay)
+        {
+            var order = new OrderMessage
+            {
+                OrderId = Guid.NewGuid().ToString(),
+                Price = 100M,
+                ProductCode = "Computer",
+                Quantity = 10,
+                CreatedTime = DateTime.Now
+            };
+            Console.WriteLine("发送一条消息，时间：" + DateTime.Now);
+            _mqHub.Send(order, delaySend: delay);
+        }
     }
 }

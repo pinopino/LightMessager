@@ -58,7 +58,21 @@ namespace LightMessager
             }
             channel.BasicQos(0, _prefetch_count, false);
 
-            EnsureRouteQueue(channel, typeof(TMessage), subscriber, subscribeKeys, out QueueInfo info);
+            var useTopic = false;
+            foreach (var key in subscribeKeys)
+            {
+                if (key.IndexOf('.') > 0)
+                {
+                    useTopic = true;
+                    break;
+                }
+            }
+
+            QueueInfo info;
+            if (useTopic)
+                EnsureTopicQueue(channel, typeof(TMessage), subscriber, subscribeKeys, out info);
+            else
+                EnsureRouteQueue(channel, typeof(TMessage), subscriber, subscribeKeys, out info);
             channel.BasicConsume(info.Queue, false, consumer);
         }
 

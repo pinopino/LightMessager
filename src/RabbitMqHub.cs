@@ -202,12 +202,13 @@ namespace LightMessager
                 var dlx_key = $"{key}.delay_{delaySend}";
                 if (!_route_dlx.ContainsKey(dlx_key))
                 {
-                    info.Delay_Exchange = info.Exchange;
+                    info.Delay_Exchange = $"{key}.ex.delay_{delaySend}";
                     info.Delay_Queue = dlx_key;
 
+                    channel.ExchangeDeclare(info.Delay_Exchange, ExchangeType.Fanout, durable: true);
                     var args = new Dictionary<string, object>();
                     args.Add("x-message-ttl", delaySend * 1000);
-                    args.Add("x-dead-letter-exchange", info.Delay_Exchange);
+                    args.Add("x-dead-letter-exchange", info.Exchange);
                     channel.QueueDeclare(
                         info.Delay_Queue,
                         durable: true,
@@ -243,7 +244,7 @@ namespace LightMessager
             var key = GetTypeName(messageType);
             if (!_route_queue.TryGetValue(key, out info))
             {
-                info = GetRouteQueueInfo(key);
+                info = GetTopicQueueInfo(key);
                 channel.ExchangeDeclare(info.Exchange, ExchangeType.Topic, durable: true);
             }
 
@@ -253,12 +254,13 @@ namespace LightMessager
                 var dlx_key = $"{key}.delay_{delaySend}";
                 if (!_route_dlx.ContainsKey(dlx_key))
                 {
-                    info.Delay_Exchange = info.Exchange;
+                    info.Delay_Exchange = $"{key}.ex.delay_{delaySend}";
                     info.Delay_Queue = dlx_key;
 
+                    channel.ExchangeDeclare(info.Delay_Exchange, ExchangeType.Fanout, durable: true);
                     var args = new Dictionary<string, object>();
                     args.Add("x-message-ttl", delaySend * 1000);
-                    args.Add("x-dead-letter-exchange", info.Delay_Exchange);
+                    args.Add("x-dead-letter-exchange", info.Exchange);
                     channel.QueueDeclare(
                         info.Delay_Queue,
                         durable: true,
@@ -279,7 +281,7 @@ namespace LightMessager
             var key = $"{type_name}.sub.{subscriber}";
             if (!_route_queue.TryGetValue(key, out info))
             {
-                info = GetRouteQueueInfo(key, type_name);
+                info = GetTopicQueueInfo(key, type_name);
                 info.Queue = key;
                 channel.ExchangeDeclare(info.Exchange, ExchangeType.Topic, durable: true);
                 channel.QueueDeclare(info.Queue, durable: true, exclusive: false, autoDelete: false);
@@ -304,12 +306,13 @@ namespace LightMessager
                 var dlx_key = $"{key}.delay_{delaySend}";
                 if (!_route_dlx.ContainsKey(dlx_key))
                 {
-                    info.Delay_Exchange = info.Exchange;
+                    info.Delay_Exchange = $"{key}.ex.delay_{delaySend}";
                     info.Delay_Queue = dlx_key;
 
+                    channel.ExchangeDeclare(info.Delay_Exchange, ExchangeType.Fanout, durable: true);
                     var args = new Dictionary<string, object>();
                     args.Add("x-message-ttl", delaySend * 1000);
-                    args.Add("x-dead-letter-exchange", info.Delay_Exchange);
+                    args.Add("x-dead-letter-exchange", info.Exchange);
                     channel.QueueDeclare(
                         info.Delay_Queue,
                         durable: true,

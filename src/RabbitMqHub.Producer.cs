@@ -39,7 +39,7 @@ namespace LightMessager
                         EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
                     else
                         EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
-                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
+                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                 }
                 return pooled.WaitForConfirms();
             }
@@ -87,7 +87,7 @@ namespace LightMessager
                     if (string.IsNullOrEmpty(routeKey))
                         pooled.Publish(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
                     else
-                        pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
+                        pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
 
                     if (counter % _batch_size == 0)
                         pooled.WaitForConfirms();
@@ -132,6 +132,7 @@ namespace LightMessager
                     if (string.IsNullOrEmpty(routeKey))
                     {
                         EnsureSendQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                        pooled.Publish(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
                     }
                     else
                     {
@@ -139,8 +140,8 @@ namespace LightMessager
                             EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
                         else
                             EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                        pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                     }
-                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
 
                     if (counter % _batch_size == 0)
                         pooled.WaitForConfirms();
@@ -173,7 +174,7 @@ namespace LightMessager
                         EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
                     else
                         EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
-                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
+                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                 }
                 await pooled.WaitForConfirmsAsync(sequence, message.MsgId);
                 return true;
@@ -215,14 +216,14 @@ namespace LightMessager
                     if (string.IsNullOrEmpty(routeKey))
                         sequence = pooled.PublishAsync(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
                     else
-                        sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
+                        sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                 }
                 await pooled.WaitForConfirmsAsync(sequence, lastMsg.MsgId);
                 return true;
             }
         }
 
-        internal async Task<bool> SendAsync<TMessage>(IEnumerable<TMessage> messages, Func<TMessage, string> routeKeySelector, int delaySend = 0)
+        private async Task<bool> SendAsync<TMessage>(IEnumerable<TMessage> messages, Func<TMessage, string> routeKeySelector, int delaySend = 0)
             where TMessage : BaseMessage
         {
             if (routeKeySelector == null)
@@ -249,6 +250,7 @@ namespace LightMessager
                     if (string.IsNullOrEmpty(routeKey))
                     {
                         EnsureSendQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                        sequence = pooled.PublishAsync(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
                     }
                     else
                     {
@@ -256,8 +258,9 @@ namespace LightMessager
                             EnsureTopicQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
                         else
                             EnsureRouteQueue(pooled.Channel, typeof(TMessage), delaySend, out info);
+                        sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                     }
-                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Queue, routeKey);
+
                 }
                 await pooled.WaitForConfirmsAsync(sequence, lastMsg.MsgId);
                 return true;
@@ -276,10 +279,7 @@ namespace LightMessager
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TMessage), delaySend, out QueueInfo info);
-                if (delaySend == 0)
-                    pooled.Publish(message, info.Exchange, string.Empty);
-                else
-                    pooled.Publish(message, string.Empty, info.Delay_Queue);
+                pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
                 return pooled.WaitForConfirms();
             }
         }
@@ -303,10 +303,7 @@ namespace LightMessager
                     if (!PreTrackMessage(message))
                         return false;
 
-                    if (delaySend == 0)
-                        pooled.Publish(message, info.Exchange, string.Empty);
-                    else
-                        pooled.Publish(message, string.Empty, info.Delay_Queue);
+                    pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
 
                     if (counter % _batch_size == 0)
                         pooled.WaitForConfirms();
@@ -328,10 +325,7 @@ namespace LightMessager
             {
                 ulong sequence = 0;
                 EnsurePublishQueue(pooled.Channel, typeof(TMessage), delaySend, out QueueInfo info);
-                if (delaySend == 0)
-                    sequence = pooled.PublishAsync(message, info.Exchange, string.Empty);
-                else
-                    sequence = pooled.PublishAsync(message, string.Empty, info.Delay_Queue);
+                sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
                 await pooled.WaitForConfirmsAsync(sequence, message.MsgId);
                 return true;
             }
@@ -358,10 +352,7 @@ namespace LightMessager
                         return false;
 
                     lastMsg = message;
-                    if (delaySend == 0)
-                        sequence = pooled.PublishAsync(message, info.Exchange, string.Empty);
-                    else
-                        sequence = pooled.PublishAsync(message, string.Empty, info.Delay_Queue);
+                    sequence = pooled.PublishAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
                 }
                 await pooled.WaitForConfirmsAsync(sequence, lastMsg.MsgId);
                 return true;
