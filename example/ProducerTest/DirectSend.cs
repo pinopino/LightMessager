@@ -13,13 +13,12 @@ namespace ProducerTest
 
         public void Run1()
         {
-            var order = new OrderMessage
+            var order = new Order
             {
                 OrderId = Guid.NewGuid().ToString(),
                 Price = 100M,
                 ProductCode = "Computer",
-                Quantity = 10,
-                CreatedTime = DateTime.Now
+                Quantity = 10
             };
             _mqHub.Send(order);
         }
@@ -29,13 +28,12 @@ namespace ProducerTest
         {
             for (var i = 0; i < 10; i++)
             {
-                var order = new OrderMessage
+                var order = new Order
                 {
                     OrderId = $"order_{i}",
                     Price = (i + 1) * 100M,
                     ProductCode = "Computer",
-                    Quantity = (i + 1) * 10,
-                    CreatedTime = DateTime.Now
+                    Quantity = (i + 1) * 10
                 };
                 _mqHub.Send(order);
             }
@@ -43,13 +41,12 @@ namespace ProducerTest
 
         public void Run3(int delay)
         {
-            var order = new OrderMessage
+            var order = new Order
             {
                 OrderId = Guid.NewGuid().ToString(),
                 Price = 100M,
                 ProductCode = "Computer",
-                Quantity = 10,
-                CreatedTime = DateTime.Now
+                Quantity = 10
             };
             Console.WriteLine("发送一条消息，时间：" + DateTime.Now);
             _mqHub.Send(order, delaySend: delay);

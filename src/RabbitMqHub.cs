@@ -21,15 +21,15 @@ namespace LightMessager
     */
     public sealed partial class RabbitMqHub
     {
+        private static ObjectPool<IPooledWapper> _channel_pools;
+
         private int _max_requeue;
         private int _max_republish;
         private int _min_delaysend;
         private ushort _prefetch_count;
         private int _batch_size;
-        private BaseMessageTracker _tracker;
         private IConnection _connection;
         private IConnection _asynConnection;
-        private static ObjectPool<IPooledWapper> _channel_pools;
         private ConcurrentDictionary<string, QueueInfo> _send_queue;
         private ConcurrentDictionary<string, QueueInfo> _route_queue;
         private ConcurrentDictionary<string, bool> _send_dlx;
@@ -46,7 +46,6 @@ namespace LightMessager
             var configuration = builder.Build();
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitMessageTracker(configuration);
             InitChannelPool(configuration);
             InitOther(configuration);
         }
@@ -58,7 +57,6 @@ namespace LightMessager
 
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitMessageTracker(configuration);
             InitChannelPool(configuration);
             InitOther(configuration);
         }
@@ -96,13 +94,8 @@ namespace LightMessager
             // 自己的connection（甚至connection也可以池化掉）
             var cpu = Environment.ProcessorCount;
             _channel_pools = new ObjectPool<IPooledWapper>(
-                p => new PooledChannel(_connection.CreateModel(), p, _tracker, _connection),
+                p => new PooledChannel(_connection.CreateModel(), p, _connection),
                 cpu, cpu * 2);
-        }
-
-        private void InitMessageTracker(IConfigurationRoot configuration)
-        {
-            _tracker = new InMemoryTracker();
         }
 
         private void InitOther(IConfigurationRoot configuration)
@@ -116,25 +109,6 @@ namespace LightMessager
             _route_queue = new ConcurrentDictionary<string, QueueInfo>();
             _send_dlx = new ConcurrentDictionary<string, bool>();
             _route_dlx = new ConcurrentDictionary<string, bool>();
-        }
-
-        internal bool PreTrackMessage(BaseMessage message)
-        {
-            var model = _tracker.GetMessage(message.MsgId);
-            if (model != null)
-            {
-                if (model.State == MessageState.Created && model.Republish < _max_republish)
-                {
-                    model.Republish += 1;
-                    return true;
-                }
-            }
-            else
-            {
-                return _tracker.AddMessage(message);
-            }
-
-            return false;
         }
 
         // send方式的生产端

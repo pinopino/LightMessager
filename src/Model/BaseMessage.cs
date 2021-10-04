@@ -1,44 +1,44 @@
 ﻿using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 
 namespace LightMessager.Model
 {
-    public abstract class BaseMessage
+    public interface IIdentifiedMessage
     {
-        public abstract string MsgId { get; }
+        string MsgId { get; }
+    }
 
-        [JsonIgnore]
-        public string Content { set; get; }
+    public abstract class Message
+    {
+        public Dictionary<string, object> Headers { protected set; get; }
 
-        /// <summary>
-        /// 0 created、1 error、2 error_unroutable、4 error_noexchangefound、8 confirmed、16 consumed
-        /// </summary>
-        public MessageState State { set; get; }
+        internal ulong DeliveryTag { set; get; }
 
-        /// <summary>
-        /// publisher -> broker
-        /// </summary>
-        public int Republish { set; get; }
-
-        /// <summary>
-        /// broker -> consumer
-        /// </summary>
-        public int Requeue { set; get; }
+        public SendStatus SendStatus { set; get; }
 
         [JsonIgnore]
         public string Remark { set; get; }
 
         public DateTime CreatedTime { set; get; }
+    }
 
-        public DateTime? ModifyTime { set; get; }
+    public sealed class Message<TBody> : Message
+    {
+        public TBody Body { set; get; }
 
-        [JsonIgnore]
-        internal ulong DeliveryTag { set; get; }
+        public Message()
+        { }
 
-        [JsonIgnore]
-        internal bool NeedRequeue { set; get; }
+        public Message(TBody body)
+        {
+            Body = body;
+        }
 
-        [JsonIgnore]
-        internal string Pattern { set; get; }
+        public Message(TBody body, Dictionary<string, object> headers)
+        {
+            Body = body;
+            Headers = headers;
+        }
     }
 }

@@ -13,21 +13,21 @@ namespace ConsumerTest
 
 
             // ============注册感兴趣的routekey进行消费============
-            mq.RegisterHandler<OrderMessage, OrderHandler1>("direct_sub1", new string[] { "computer" });
+            mq.RegisterHandler<Order, OrderHandler1>("direct_sub1", new string[] { "computer" });
             System.Threading.Thread.Sleep(1000 * 5);// 睡一下让打印出来的结果清晰一点，不影响测试正确性
-            mq.RegisterHandler<OrderMessage, OrderHandler2>("direct_sub2", new string[] { "fruit", "snack" });
+            mq.RegisterHandler<Order, OrderHandler2>("direct_sub2", new string[] { "fruit", "snack" });
 
 
             // ============注册感兴趣的topic进行消费============
-            //mq.RegisterHandler<OrderMessage, OrderHandler1>("topic_sub1", new string[] { "food.#" });
+            //mq.RegisterHandler<Order, OrderHandler1>("topic_sub1", new string[] { "food.#" });
             //System.Threading.Thread.Sleep(1000 * 5);// 睡一下让打印出来的结果清晰一点，不影响测试正确性
-            //mq.RegisterHandler<OrderMessage, OrderHandler2>("topic_sub2", new string[] { "*.cheap.*" });
+            //mq.RegisterHandler<Order, OrderHandler2>("topic_sub2", new string[] { "*.cheap.*" });
 
 
             // ============Fanout============
-            //mq.RegisterHandler<OrderMessage, OrderHandler1>("fanout_sub1");
+            //mq.RegisterHandler<Order, OrderHandler1>("fanout_sub1");
             //System.Threading.Thread.Sleep(1000 * 5);// 睡一下让打印出来的结果清晰一点，不影响测试正确性
-            //mq.RegisterHandler<OrderMessage, OrderHandler2>("fanout_sub2");
+            //mq.RegisterHandler<Order, OrderHandler2>("fanout_sub2");
             Console.Read();
         }
     }

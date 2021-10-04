@@ -1,21 +1,19 @@
 ﻿using LightMessager.Common;
 using LightMessager.Exceptions;
-using LightMessager.Track;
 using NLog;
 using System;
 using System.Threading.Tasks;
 
 namespace LightMessager.Model
 {
-    public abstract class BaseMessageHandler<TMessage> : IHandleMessages<TMessage>
-        where TMessage : BaseMessage
+    public abstract class BaseMessageHandler<TBody> : IHandleMessages<TBody>
+        where TBody : IIdentifiedMessage
     {
         private int _maxRetry;
         private int _maxRequeue;
         private int _backoffMs;
         private static Logger _logger = LogManager.GetLogger("MessageHandler");
 
-        internal BaseMessageTracker Tracker { set; get; }
         public abstract bool Idempotent { get; }
 
         protected BaseMessageHandler()
@@ -25,7 +23,7 @@ namespace LightMessager.Model
             _backoffMs = 200;
         }
 
-        public bool Handle(TMessage message)
+        public bool Handle(Message<TBody> message)
         {
             try
             {
@@ -52,10 +50,11 @@ namespace LightMessager.Model
                 // 设置NeedRequeue为true准备重新入队列
                 DoRequeue(message);
             }
+
             return false;
         }
 
-        public async Task<bool> HandleAsync(TMessage message)
+        public async Task<bool> HandleAsync(Message<TBody> message)
         {
             try
             {
@@ -77,40 +76,41 @@ namespace LightMessager.Model
             catch (Exception ex)
             {
                 _logger.Debug("未知异常：" + ex.Message + "；堆栈：" + ex.StackTrace);
-                DoRequeue(message);
+                //DoRequeue(message);
             }
+
             return false;
         }
 
-        protected virtual bool DoHandle(TMessage message)
+        protected virtual bool DoHandle(Message<TBody> message)
         {
             throw new NotImplementedException();
         }
 
-        protected virtual Task<bool> DoHandleAsync(TMessage message)
+        protected virtual Task<bool> DoHandleAsync(Message<TBody> message)
         {
             throw new NotImplementedException();
         }
 
-        private void DoRequeue(TMessage message)
+        private void DoRequeue(Message<TBody> message)
         {
-            var model = Tracker.GetMessage(message.MsgId);
-            message.NeedRequeue = Idempotent && model.Requeue < _maxRequeue;
-            if (message.NeedRequeue)
-            {
-                message.Requeue += 1;
-                _logger.Debug($"消息准备requeue，当前requeue次数[{message.Requeue}]");
-            }
-            else
-            {
-                _logger.Debug("消息处理端不支持幂等或requeue已达上限，不再尝试");
-                Tracker.SetStatus(message.MsgId, newStatus: MessageState.Error, oldStatus: MessageState.Confirmed);
-            }
+            //var model = Tracker.GetMessage(message.MsgId);
+            //message.NeedRequeue = Idempotent && model.Requeue < _maxRequeue;
+            //if (message.NeedRequeue)
+            //{
+            //    message.Requeue += 1;
+            //    _logger.Debug($"消息准备requeue，当前requeue次数[{message.Requeue}]");
+            //}
+            //else
+            //{
+            //    _logger.Debug("消息处理端不支持幂等或requeue已达上限，不再尝试");
+            //    Tracker.SetStatus(message.MsgId, newStatus: MessageState.Error, oldStatus: MessageState.Confirmed);
+            //}
         }
 
-        private void MarkConsumed(TMessage message)
+        private void MarkConsumed(Message<TBody> message)
         {
-            Tracker.SetStatus(message.MsgId, newStatus: MessageState.Consumed, oldStatus: MessageState.Confirmed);
+            //Tracker.SetStatus(message.MsgId, newStatus: MessageState.Consumed, oldStatus: MessageState.Confirmed);
         }
     }
 }

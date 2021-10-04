@@ -9,14 +9,14 @@ namespace LightMessager.Model
     // 摘要:
     //     Message handler interface. Implement this in order to get to handle messages
     //     of a specific type
-    public interface IHandleMessages<in TMessage> : IHandleMessages
-        where TMessage : BaseMessage
+    public interface IHandleMessages<TBody> : IHandleMessages
+        where TBody : IIdentifiedMessage
     {
-        bool Handle(TMessage message);
+        bool Handle(Message<TBody> message);
 
         //
         // 摘要:
         //     This method will be invoked with a message of type TMessage
-        Task<bool> HandleAsync(TMessage message);
+        Task<bool> HandleAsync(Message<TBody> message);
     }
 }

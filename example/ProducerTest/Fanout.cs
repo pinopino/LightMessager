@@ -13,13 +13,12 @@ namespace ProducerTest
 
         public void Run()
         {
-            var order = new OrderMessage
+            var order = new Order
             {
                 OrderId = Guid.NewGuid().ToString(),
                 Price = 100M,
                 ProductCode = "Computer",
-                Quantity = 10,
-                CreatedTime = DateTime.Now
+                Quantity = 10
             };
             _mqHub.Publish(order);
         }

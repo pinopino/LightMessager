@@ -1,109 +1,115 @@
 ﻿using LightMessager.Model;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LightMessager.Track
 {
-    public class InMemoryTracker : BaseMessageTracker
+    public sealed class InMemoryTracker : IMessageSendTracker
     {
-        private object _lockObj;
-        private List<BaseMessage> _list;
+        private readonly int _spinCount;
+        private volatile int _reseting;
+        private ConcurrentDictionary<ulong, Message> _unconfirm; // <DeliveryTag, Msg>
+        private ConcurrentQueue<Message> _errorMsg;
 
         public InMemoryTracker()
         {
-            _lockObj = new object();
-            _list = new List<BaseMessage>();
+            _spinCount = 200;
+            _unconfirm = new ConcurrentDictionary<ulong, Message>();
+            _errorMsg = new ConcurrentQueue<Message>();
         }
 
-        public override bool AddMessage(BaseMessage message)
+        public void TrackMessage(ulong deliveryTag, Message message)
         {
-            lock (_lockObj)
-                _list.Add(message);
+            // 说明：
+            // 
+            // 链接：
+            // https://stackoverflow.com/questions/11099852/lock-vs-boolean
+            // https://stackoverflow.com/questions/154551/volatile-vs-interlocked-vs-lock
+            // https://docs.microsoft.com/en-us/dotnet/api/system.threading.interlocked.compareexchange
+            while (_reseting > 0)
+                Thread.SpinWait(_spinCount);
 
-            return true;
+            _unconfirm.TryAdd(deliveryTag, message);
+            message.DeliveryTag = deliveryTag;
         }
 
-        public override BaseMessage GetMessage(string messageId)
+        public ValueTask TrackMessageAsync(ulong deliveryTag, Message message)
         {
-            lock (_lockObj)
+            TrackMessage(deliveryTag, message);
+            return new ValueTask(Task.CompletedTask);
+        }
+
+        public void SetStatus(ulong deliveryTag, SendStatus newStatus, string remark = "")
+        {
+            if (_unconfirm.TryGetValue(deliveryTag, out Message msg))
             {
-                foreach (var item in _list)
-                {
-                    if (item.MsgId == messageId)
-                        return item;
-                }
-            }
-            return null;
-        }
-
-        public override void SetStatus(ulong deliveryTag, MessageState newStatus, MessageState oldStatus = MessageState.Created, string remark = "")
-        {
-            if (UnRegisterMap(deliveryTag, out string msgId))
-            {
-                lock (_lockObj)
-                {
-                    foreach (var msg in _list)
-                    {
-                        if (msg.MsgId == msgId && (oldStatus == MessageState.Created || msg.State == oldStatus))
-                        {
-                            msg.State = newStatus;
-                            break;
-                        }
-                    }
-                    ClearList();
-                }
+                msg.SendStatus = newStatus;
+                msg.Remark = remark;
             }
         }
 
-        public override void SetMultipleStatus(ulong deliveryTag, MessageState newStatus, MessageState oldStatus = MessageState.Created)
+        public ValueTask SetStatusAsync(ulong deliveryTag, SendStatus newStatus, string remark = "")
         {
-            var list = UnRegisterMap(deliveryTag);
-            if (list != null)
+            SetStatus(deliveryTag, newStatus, remark);
+            return new ValueTask(Task.CompletedTask);
+        }
+
+        public void SetMultipleStatus(ulong deliveryTag, SendStatus newStatus)
+        {
+            foreach (var item in _unconfirm)
             {
-                lock (_lockObj)
+                if (item.Key > 0 && item.Key <= deliveryTag)
                 {
-                    foreach (var item in _list)
-                    {
-                        if (list.Contains(item.MsgId) && (oldStatus == MessageState.Created || item.State == oldStatus))
-                            item.State = newStatus;
-                    }
-                    ClearList();
+                    item.Value.SendStatus = newStatus;
                 }
             }
         }
 
-        public override void SetStatus(string messageId, MessageState newStatus, MessageState oldStatus = MessageState.Created, string remark = "")
+        public ValueTask SetMultipleStatusAsync(ulong deliveryTag, SendStatus newStatus)
         {
-            lock (_lockObj)
+            SetMultipleStatus(deliveryTag, newStatus);
+            return new ValueTask(Task.CompletedTask);
+        }
+
+        public void SetStatus(Message message, SendStatus newStatus, string remark = "")
+        {
+            while (_reseting > 0)
+                Thread.SpinWait(_spinCount);
+            _unconfirm.TryRemove(message.DeliveryTag, out _);
+
+            message.SendStatus = newStatus;
+            message.Remark = remark;
+            _errorMsg.Enqueue(message);
+        }
+
+        public ValueTask SetStatusAsync(Message message, SendStatus newStatus, string remark = "")
+        {
+            SetStatus(message, newStatus, remark);
+            return new ValueTask(Task.CompletedTask);
+        }
+
+        public void Reset(string remark = "")
+        {
+            Interlocked.Increment(ref _reseting);
+            var old = _unconfirm;
+            _unconfirm = new ConcurrentDictionary<ulong, Message>();
+            Interlocked.Decrement(ref _reseting);
+
+            foreach (var item in old)
             {
-                foreach (var msg in _list)
+                if (item.Value.SendStatus != SendStatus.Confirmed)
                 {
-                    if (msg.MsgId == messageId && (oldStatus == MessageState.Created || msg.State == oldStatus))
-                    {
-                        msg.State = newStatus;
-                        break;
-                    }
+                    item.Value.Remark = remark;
+                    _errorMsg.Enqueue(item.Value);
                 }
-                ClearList();
             }
         }
 
-        // 清理逻辑，防止_list过大
-        private void ClearList()
+        public ValueTask ResetAsync()
         {
-            // 清理逻辑，防止_list过大
-            if (_list.Count > 1000)
-            {
-                List<BaseMessage> newList = null;
-                foreach (var item in _list)
-                {
-                    if (item.State != MessageState.Confirmed && item.State != MessageState.Consumed)
-                    {
-                        if (newList == null)
-                            newList = new List<BaseMessage>();
-                        newList.Add(item);
-                    }
-                }
-            }
+            Reset();
+            return new ValueTask(Task.CompletedTask);
         }
     }
 }

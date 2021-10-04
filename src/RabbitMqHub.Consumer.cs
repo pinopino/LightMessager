@@ -9,23 +9,22 @@ namespace LightMessager
 {
     public sealed partial class RabbitMqHub
     {
-        public void RegisterHandler<TMessage, THandler>(bool asyncConsumer = false)
-            where THandler : BaseMessageHandler<TMessage>
-            where TMessage : BaseMessage
+        public void RegisterHandler<TBody, THandler>(bool asyncConsumer = false)
+            where THandler : BaseMessageHandler<TBody>
+            where TBody : IIdentifiedMessage
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
-            handler.Tracker = _tracker;
             IModel channel = null;
             IBasicConsumer consumer = null;
             if (!asyncConsumer)
             {
                 channel = _connection.CreateModel();
-                consumer = SetupConsumer<TMessage, THandler>(channel, handler);
+                consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
                 channel = _asynConnection.CreateModel();
-                consumer = SetupAsyncConsumer<TMessage, THandler>(channel, handler);
+                consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
             /*
               @param prefetchSize maximum amount of content (measured in octets) that the server will deliver, 0 if unlimited
@@ -34,27 +33,26 @@ namespace LightMessager
             */
             channel.BasicQos(0, _prefetch_count, false);
 
-            EnsureSendQueue(channel, typeof(TMessage), out QueueInfo info);
+            EnsureSendQueue(channel, typeof(TBody), out QueueInfo info);
             channel.BasicConsume(info.Queue, false, consumer);
         }
 
-        public void RegisterHandler<TMessage, THandler>(string subscriber, string[] subscribeKeys, bool asyncConsumer = false)
-            where THandler : BaseMessageHandler<TMessage>
-            where TMessage : BaseMessage
+        public void RegisterHandler<TBody, THandler>(string subscriber, string[] subscribeKeys, bool asyncConsumer = false)
+            where THandler : BaseMessageHandler<TBody>
+            where TBody : IIdentifiedMessage
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
-            handler.Tracker = _tracker;
             IModel channel = null;
             IBasicConsumer consumer = null;
             if (!asyncConsumer)
             {
                 channel = _connection.CreateModel();
-                consumer = SetupConsumer<TMessage, THandler>(channel, handler);
+                consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
                 channel = _asynConnection.CreateModel();
-                consumer = SetupAsyncConsumer<TMessage, THandler>(channel, handler);
+                consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
             channel.BasicQos(0, _prefetch_count, false);
 
@@ -70,39 +68,38 @@ namespace LightMessager
 
             QueueInfo info;
             if (useTopic)
-                EnsureTopicQueue(channel, typeof(TMessage), subscriber, subscribeKeys, out info);
+                EnsureTopicQueue(channel, typeof(TBody), subscriber, subscribeKeys, out info);
             else
-                EnsureRouteQueue(channel, typeof(TMessage), subscriber, subscribeKeys, out info);
+                EnsureRouteQueue(channel, typeof(TBody), subscriber, subscribeKeys, out info);
             channel.BasicConsume(info.Queue, false, consumer);
         }
 
-        public void RegisterHandler<TMessage, THandler>(string subscriber, bool asyncConsumer = false)
-            where THandler : BaseMessageHandler<TMessage>
-            where TMessage : BaseMessage
+        public void RegisterHandler<TBody, THandler>(string subscriber, bool asyncConsumer = false)
+            where THandler : BaseMessageHandler<TBody>
+            where TBody : IIdentifiedMessage
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
-            handler.Tracker = _tracker;
             IModel channel = null;
             IBasicConsumer consumer = null;
             if (!asyncConsumer)
             {
                 channel = _connection.CreateModel();
-                consumer = SetupConsumer<TMessage, THandler>(channel, handler);
+                consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
                 channel = _asynConnection.CreateModel();
-                consumer = SetupAsyncConsumer<TMessage, THandler>(channel, handler);
+                consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
             channel.BasicQos(0, _prefetch_count, false);
 
-            EnsurePublishQueue(channel, typeof(TMessage), subscriber, out QueueInfo info);
+            EnsurePublishQueue(channel, typeof(TBody), subscriber, out QueueInfo info);
             channel.BasicConsume(info.Queue, false, consumer);
         }
 
-        private EventingBasicConsumer SetupConsumer<TMessage, THandler>(IModel channel, THandler handler)
-            where THandler : BaseMessageHandler<TMessage>
-            where TMessage : BaseMessage
+        private EventingBasicConsumer SetupConsumer<TBody, THandler>(IModel channel, THandler handler)
+            where THandler : BaseMessageHandler<TBody>
+            where TBody : IIdentifiedMessage
         {
             // 说明：
             // （6.0之后）consumer interface implementations must deserialize or copy delivery payload before 
@@ -112,7 +109,8 @@ namespace LightMessager
             consumer.Received += (model, ea) =>
             {
                 // 我们需要这样子来利用短路，大多数情况下耗时的GetModel都不会被调用到
-                if (ea.Redelivered && _tracker.GetMessage(ea.BasicProperties.MessageId) != null)
+                //if (ea.Redelivered && _tracker.GetMessage(ea.BasicProperties.MessageId) != null)
+                if (ea.Redelivered)
                 {
                     // 之前一定有处理过
                     if (!handler.Idempotent)
@@ -129,25 +127,26 @@ namespace LightMessager
                 // 之前一定会进行登记；
                 // 最后，如果handler是幂等的那么也会走到这里来
                 var json = Encoding.UTF8.GetString(ea.Body);
-                var msg = JsonConvert.DeserializeObject<TMessage>(json);
+                var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
                 if (handler.Handle(msg))
                     channel.BasicAck(ea.DeliveryTag, false);
                 else
-                    channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
+                    channel.BasicNack(ea.DeliveryTag, false, false/*msg.NeedRequeue*/);
             };
 
             return consumer;
         }
 
-        private AsyncEventingBasicConsumer SetupAsyncConsumer<TMessage, THandler>(IModel channel, THandler handler)
-            where THandler : BaseMessageHandler<TMessage>
-            where TMessage : BaseMessage
+        private AsyncEventingBasicConsumer SetupAsyncConsumer<TBody, THandler>(IModel channel, THandler handler)
+            where THandler : BaseMessageHandler<TBody>
+            where TBody : IIdentifiedMessage
         {
             // 说明：虽然是异步，但是per channel的回调执行顺序还是保证了的（跟同步情况是一样的）
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.Received += async (model, ea) =>
             {
-                if (ea.Redelivered && _tracker.GetMessage(ea.BasicProperties.MessageId) != null)
+                //if (ea.Redelivered && _tracker.GetMessage(ea.BasicProperties.MessageId) != null)
+                if (ea.Redelivered)
                 {
                     if (!handler.Idempotent)
                     {
@@ -157,11 +156,11 @@ namespace LightMessager
                 }
 
                 var json = Encoding.UTF8.GetString(ea.Body);
-                var msg = JsonConvert.DeserializeObject<TMessage>(json);
+                var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
                 if (await handler.HandleAsync(msg))
                     channel.BasicAck(ea.DeliveryTag, false);
                 else
-                    channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
+                    channel.BasicNack(ea.DeliveryTag, false, false/*msg.NeedRequeue*/);
             };
 
             return consumer;
