@@ -28,12 +28,12 @@ namespace LightMessager
 
         public IModel Channel { get { return this._innerChannel; } }
 
-        public PooledChannel(IModel channel, ObjectPool<IPooledWapper> pool, IConnection connection, bool usingTrack = true)
+        public PooledChannel(IModel channel, ObjectPool<IPooledWapper> pool, IConnection connection, bool track = true)
         {
             _pool = pool;
             _spinCount = 200;
-            if (usingTrack)
-                _tracker = new InMemoryTracker();
+            if (track)
+                _tracker = new InMemorySendTracker();
             else
                 _awaitingCheckpoint = new ConcurrentDictionary<ulong, TaskCompletionSource<bool>>();
             _innerChannel = channel;
@@ -52,6 +52,14 @@ namespace LightMessager
 
         internal void Publish<TBody>(Message<TBody> message, string exchange, string routeKey)
         {
+            /*
+             * 说明：
+             * .Enable publisher confirms on a channel
+             * .For every published message, add a map entry that maps current sequence number to the message
+             * .When a positive ack arrives, remove the entry
+             * .When a negative ack arrives, remove the entry and schedule its message for republishing (or something else that's suitable)
+             * 
+             */
             _tracker?.TrackMessage(_innerChannel.NextPublishSeqNo, message);
             InnerPublish(message, exchange, routeKey);
         }
@@ -70,10 +78,7 @@ namespace LightMessager
             var json = JsonConvert.SerializeObject(message);
             var bytes = Encoding.UTF8.GetBytes(json);
             var props = _innerChannel.CreateBasicProperties();
-            if (typeof(IIdentifiedMessage).IsAssignableFrom(typeof(TBody)))
-            {
-                props.MessageId = (message.Body as IIdentifiedMessage).MsgId;
-            }
+            props.MessageId = message.MsgId;
             props.ContentType = "text/plain";
             props.DeliveryMode = 2;
             try

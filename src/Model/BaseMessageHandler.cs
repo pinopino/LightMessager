@@ -1,82 +1,90 @@
 ﻿using LightMessager.Common;
 using LightMessager.Exceptions;
+using LightMessager.Track;
 using NLog;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace LightMessager.Model
 {
     public abstract class BaseMessageHandler<TBody> : IHandleMessages<TBody>
-        where TBody : IIdentifiedMessage
     {
+        private static Logger _logger = LogManager.GetLogger("MessageHandler");
+
         private int _maxRetry;
         private int _maxRequeue;
         private int _backoffMs;
-        private static Logger _logger = LogManager.GetLogger("MessageHandler");
+        protected IMessageRecvTracker _tracker;
+        protected Dictionary<string, int> _requeueCounter;
 
+        public IMessageRecvTracker Tracker => _tracker;
         public abstract bool Idempotent { get; }
 
         protected BaseMessageHandler()
         {
-            _maxRetry = 1; // 按需修改
-            _maxRequeue = 2;
+            _maxRetry = 2; // 按需修改
+            _maxRequeue = 1;
             _backoffMs = 200;
+            _requeueCounter = new Dictionary<string, int>();
+            _tracker = new InMemoryRecvTracker();
         }
 
-        public bool Handle(Message<TBody> message)
+        // 说明：redelivered来自于上层传入的BasicDeliverEventArgs.Redelivered
+        // 该值为false说明一定没有处理过该条消息，而为true则意义不大没办法说明任何事情
+        public bool Handle(Message<TBody> message, bool redelivered)
         {
+            // 说明：
+            // 返回值true或false表达的是对于消息处理的业务结果，跟是否需要重新入队没有任何关系；
+            // 库在这里的假设是如果DoHandle内部有异常情况发生则我们可以试着有限的requeue一波（仅针对特定的异常类型），
+            // 因此你会看到DoRequeue的逻辑是放在catch(Exception<LightMessagerExceptionArgs>)处理块中的。
+            // 这同时也意味着每一波retry之后是否重新入队我们都需要重新判断，msg.NeedRequeue正是用于此目的。
+            // 注意bool值默认为false，如果没有任何异常则NeedRequeue自动为false。
             try
             {
-                // 执行DoHandle可能会发生异常，如果是我们特定的异常则进行重试操作
-                // 否则直接抛出异常
-                var ret = RetryHelper.Retry(() => DoHandle(message), Idempotent ? _maxRetry : 1, _backoffMs, p =>
+                var ret = false;
+                if (!redelivered && _tracker.TrackMessage(message))
                 {
-                    var ex = p as Exception<LightMessagerExceptionArgs>;
-                    if (ex != null)
-                        return true;
-
-                    return false;
-                });
-
-                if (ret)
-                    MarkConsumed(message);
+                    ret = RetryHelper.Retry(() => DoHandle(message), Idempotent ? _maxRetry : 1, _backoffMs);
+                    _tracker.SetStatus(message, RecvStatus.Consumed);
+                }
                 return ret;
+            }
+            catch (Exception<LightMessagerExceptionArgs>)
+            {
+                DoRequeue(message);
             }
             catch (Exception ex)
             {
-                _logger.Debug("未知异常：" + ex.Message + "；堆栈：" + ex.StackTrace);
-                // 说明：_maxRetry次之后还需要判该条消息requeue次数是否超过允
-                // 许的最大值：如果是，不再做任何进一步尝试了，log一波；否则
-                // 设置NeedRequeue为true准备重新入队列
-                DoRequeue(message);
+                var remark = $"未知异常：{ex.Message}；堆栈：{ex.StackTrace}";
+                _tracker.SetStatus(message, RecvStatus.Failed, remark);
+                _logger.Error(remark);
             }
 
             return false;
         }
 
-        public async Task<bool> HandleAsync(Message<TBody> message)
+        public async Task<bool> HandleAsync(Message<TBody> message, bool redelivered)
         {
             try
             {
-                var ret = await RetryHelper.RetryAsync(async () => await DoHandleAsync(message),
-                    Idempotent ? _maxRetry : 1, _backoffMs, p =>
+                var ret = false;
+                if (!redelivered && await _tracker.TrackMessageAsync(message))
                 {
-                    var ex = p as Exception<LightMessagerExceptionArgs>;
-                    if (ex != null)
-                        return true;
-
-                    return false;
-                });
-
-                if (ret)
-                    MarkConsumed(message);
-
+                    ret = await RetryHelper.RetryAsync(async () => await DoHandleAsync(message), Idempotent ? _maxRetry : 1, _backoffMs);
+                    await _tracker.SetStatusAsync(message, RecvStatus.Consumed);
+                }
                 return ret;
+            }
+            catch (Exception<LightMessagerExceptionArgs>)
+            {
+                await DoRequeueAsync(message);
             }
             catch (Exception ex)
             {
-                _logger.Debug("未知异常：" + ex.Message + "；堆栈：" + ex.StackTrace);
-                //DoRequeue(message);
+                var remark = $"未知异常：{ex.Message}；堆栈：{ex.StackTrace}";
+                await _tracker.SetStatusAsync(message, RecvStatus.Failed, remark);
+                _logger.Error(remark);
             }
 
             return false;
@@ -94,23 +102,73 @@ namespace LightMessager.Model
 
         private void DoRequeue(Message<TBody> message)
         {
-            //var model = Tracker.GetMessage(message.MsgId);
-            //message.NeedRequeue = Idempotent && model.Requeue < _maxRequeue;
-            //if (message.NeedRequeue)
-            //{
-            //    message.Requeue += 1;
-            //    _logger.Debug($"消息准备requeue，当前requeue次数[{message.Requeue}]");
-            //}
-            //else
-            //{
-            //    _logger.Debug("消息处理端不支持幂等或requeue已达上限，不再尝试");
-            //    Tracker.SetStatus(message.MsgId, newStatus: MessageState.Error, oldStatus: MessageState.Confirmed);
-            //}
+            if (Idempotent)
+            {
+                var msgId = message.MsgId;
+                if (_requeueCounter.TryGetValue(msgId, out int requeueCount))
+                {
+                    message.NeedRequeue = requeueCount < _maxRequeue;
+                    if (message.NeedRequeue)
+                    {
+                        _requeueCounter[msgId] = requeueCount + 1;
+                        _logger.Debug($"消息准备第[{requeueCount + 1}]次requeue");
+                    }
+                    else
+                    {
+                        var remark = "消息requeue次数已达上限，不再尝试";
+                        _tracker.SetStatus(message, RecvStatus.Failed, remark);
+                        _logger.Warn(remark);
+                    }
+                }
+                else
+                {
+                    message.NeedRequeue = true;
+                    _requeueCounter[msgId] = 1;
+                    _logger.Debug($"消息准备第[1]次requeue");
+                }
+            }
+            else
+            {
+                var remark = "消息处理端不支持幂等，消息不会requeue，处理结束";
+                _tracker.SetStatus(message, RecvStatus.Failed, remark);
+                _logger.Warn(remark);
+            }
         }
 
-        private void MarkConsumed(Message<TBody> message)
+        private async Task DoRequeueAsync(Message<TBody> message)
         {
-            //Tracker.SetStatus(message.MsgId, newStatus: MessageState.Consumed, oldStatus: MessageState.Confirmed);
+            if (Idempotent)
+            {
+                var msgId = message.MsgId;
+                if (_requeueCounter.TryGetValue(msgId, out int requeueCount))
+                {
+                    message.NeedRequeue = requeueCount < _maxRequeue;
+                    if (message.NeedRequeue)
+                    {
+                        var newVal = requeueCount + 1;
+                        _requeueCounter[msgId] = newVal;
+                        _logger.Debug($"消息准备第[{newVal}]次requeue");
+                    }
+                    else
+                    {
+                        var remark = "消息requeue次数已达上限，不再尝试";
+                        await _tracker.SetStatusAsync(message, RecvStatus.Failed, remark);
+                        _logger.Warn(remark);
+                    }
+                }
+                else
+                {
+                    message.NeedRequeue = true;
+                    _requeueCounter[msgId] = 1;
+                    _logger.Debug($"消息准备第[1]次requeue");
+                }
+            }
+            else
+            {
+                var remark = "消息处理端不支持幂等，消息不会requeue，处理结束";
+                await _tracker.SetStatusAsync(message, RecvStatus.Failed, remark);
+                _logger.Warn(remark);
+            }
         }
     }
 }

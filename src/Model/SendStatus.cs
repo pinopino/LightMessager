@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace LightMessager.Model
+﻿namespace LightMessager.Model
 {
     public enum SendStatus
     {

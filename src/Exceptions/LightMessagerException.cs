@@ -5,7 +5,13 @@ using System.Security.Permissions;
 namespace LightMessager.Exceptions
 {
     [Serializable]
-    public class LightMessagerExceptionArgs : ExceptionArgs
+    public abstract class ExceptionArgs
+    {
+        public virtual string Message { get { return string.Empty; } }
+    }
+
+    [Serializable]
+    public sealed class LightMessagerExceptionArgs : ExceptionArgs
     { }
 
     [Serializable]
@@ -65,18 +71,6 @@ namespace LightMessager.Exceptions
         public override int GetHashCode()
         {
             return base.GetHashCode();
-        }
-    }
-
-    [Serializable]
-    public abstract class ExceptionArgs
-    {
-        public virtual string Message
-        {
-            get
-            {
-                return string.Empty;
-            }
         }
     }
 }

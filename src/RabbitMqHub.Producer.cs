@@ -17,11 +17,7 @@ namespace LightMessager
         /// <param name="delaySend">延迟发送</param>
         /// <returns>true发送成功，反之失败</returns>
         public bool Send<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
-            if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                throw new ArgumentNullException("messageBody.MsgId");
-
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
                 var message = new Message<TBody>(messageBody);
@@ -52,7 +48,6 @@ namespace LightMessager
         /// <param name="delaySend">延迟发送</param>
         /// <returns>true发送成功，反之失败</returns>
         public bool Send<TBody>(IEnumerable<TBody> messageBodys, string routeKey = "", int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
             if (!messageBodys.Any())
                 return false;
@@ -75,9 +70,6 @@ namespace LightMessager
                 var counter = 0;
                 foreach (var messageBody in messageBodys)
                 {
-                    if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                        throw new ArgumentNullException("messageBody.MsgId");
-
                     var message = new Message<TBody>(messageBody);
                     if (string.IsNullOrEmpty(routeKey))
                         pooled.Publish(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
@@ -100,7 +92,6 @@ namespace LightMessager
         /// <param name="delaySend">延迟发送</param>
         /// <returns>true发送成功，反之失败</returns>
         private bool Send<TBody>(IEnumerable<TBody> messageBodys, Func<TBody, string> routeKeySelector, int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
             // 可见性调整为private。
             // 感觉这个方法挺危险的而实际干的事情其实是将上层业务可以做的事情也一并做了
@@ -117,9 +108,6 @@ namespace LightMessager
                 var counter = 0;
                 foreach (var messageBody in messageBodys)
                 {
-                    if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                        throw new ArgumentNullException("messageBody.MsgId");
-
                     var routeKey = routeKeySelector(messageBody);
                     var message = new Message<TBody>(messageBody);
                     if (string.IsNullOrEmpty(routeKey))
@@ -144,11 +132,7 @@ namespace LightMessager
         }
 
         public async ValueTask<bool> SendAsync<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
-            if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                throw new ArgumentNullException("messageBody.MsgId");
-
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
                 var sequence = 0ul;
@@ -172,7 +156,6 @@ namespace LightMessager
         }
 
         public async ValueTask<bool> SendAsync<TBody>(IEnumerable<TBody> messageBodys, string routeKey = "", int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
             if (!messageBodys.Any())
                 return false;
@@ -196,9 +179,6 @@ namespace LightMessager
                 var sequence = 0ul;
                 foreach (var messageBody in messageBodys)
                 {
-                    if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                        throw new ArgumentNullException("messageBody.MsgId");
-
                     var message = new Message<TBody>(messageBody);
                     if (string.IsNullOrEmpty(routeKey))
                         sequence = await pooled.PublishReturnSeqAsync(message, string.Empty, delaySend == 0 ? info.Queue : info.Delay_Queue);
@@ -213,7 +193,6 @@ namespace LightMessager
         }
 
         private async ValueTask<bool> SendAsync<TBody>(IEnumerable<TBody> messageBodys, Func<TBody, string> routeKeySelector, int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
             if (routeKeySelector == null)
                 throw new ArgumentNullException("routeKeySelector");
@@ -228,9 +207,6 @@ namespace LightMessager
                 var sequence = 0ul;
                 foreach (var messageBody in messageBodys)
                 {
-                    if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                        throw new ArgumentNullException("messageBody.MsgId");
-
                     var routeKey = routeKeySelector(messageBody);
                     var message = new Message<TBody>(messageBody);
                     if (string.IsNullOrEmpty(routeKey))
@@ -255,11 +231,7 @@ namespace LightMessager
         }
 
         public bool Publish<TBody>(TBody messageBody, int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
-            if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                throw new ArgumentNullException("messageBody.MsgId");
-
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
@@ -270,7 +242,6 @@ namespace LightMessager
         }
 
         public bool Publish<TBody>(IEnumerable<TBody> messageBodys, int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
             if (!messageBodys.Any())
                 return false;
@@ -282,9 +253,6 @@ namespace LightMessager
                 var counter = 0;
                 foreach (var messageBody in messageBodys)
                 {
-                    if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                        throw new ArgumentNullException("messageBody.MsgId");
-
                     var message = new Message<TBody>(messageBody);
                     pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
 
@@ -296,11 +264,7 @@ namespace LightMessager
         }
 
         public async ValueTask<bool> PublishAsync<TBody>(TBody messageBody, int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
-            if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                throw new ArgumentNullException("messageBody.MsgId");
-
             using (var pooled = _channel_pools.Get() as PooledChannel)
             {
                 var sequence = 0ul;
@@ -312,7 +276,6 @@ namespace LightMessager
         }
 
         public async ValueTask<bool> PublishAsync<TBody>(IEnumerable<TBody> messageBodys, int delaySend = 0)
-            where TBody : IIdentifiedMessage
         {
             if (!messageBodys.Any())
                 return false;
@@ -325,9 +288,6 @@ namespace LightMessager
                 var sequence = 0ul;
                 foreach (var messageBody in messageBodys)
                 {
-                    if (string.IsNullOrWhiteSpace(messageBody.MsgId))
-                        throw new ArgumentNullException("messageBody.MsgId");
-
                     var message = new Message<TBody>(messageBody);
                     sequence = await pooled.PublishReturnSeqAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
 

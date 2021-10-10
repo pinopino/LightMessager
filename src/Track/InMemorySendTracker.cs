@@ -5,18 +5,18 @@ using System.Threading.Tasks;
 
 namespace LightMessager.Track
 {
-    public sealed class InMemoryTracker : IMessageSendTracker
+    public sealed class InMemorySendTracker : IMessageSendTracker
     {
         private readonly int _spinCount;
         private volatile int _reseting;
         private ConcurrentDictionary<ulong, Message> _unconfirm; // <DeliveryTag, Msg>
-        private ConcurrentQueue<Message> _errorMsg;
+        private ConcurrentQueue<Message> _errorMsgs;
 
-        public InMemoryTracker()
+        public InMemorySendTracker()
         {
             _spinCount = 200;
             _unconfirm = new ConcurrentDictionary<ulong, Message>();
-            _errorMsg = new ConcurrentQueue<Message>();
+            _errorMsgs = new ConcurrentQueue<Message>();
         }
 
         public void TrackMessage(ulong deliveryTag, Message message)
@@ -80,7 +80,7 @@ namespace LightMessager.Track
 
             message.SendStatus = newStatus;
             message.Remark = remark;
-            _errorMsg.Enqueue(message);
+            _errorMsgs.Enqueue(message);
         }
 
         public ValueTask SetStatusAsync(Message message, SendStatus newStatus, string remark = "")
@@ -101,7 +101,7 @@ namespace LightMessager.Track
                 if (item.Value.SendStatus != SendStatus.Confirmed)
                 {
                     item.Value.Remark = remark;
-                    _errorMsg.Enqueue(item.Value);
+                    _errorMsgs.Enqueue(item.Value);
                 }
             }
         }
