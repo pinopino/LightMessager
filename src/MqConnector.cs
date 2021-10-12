@@ -2,6 +2,7 @@
 using LightMessager.Model;
 using Microsoft.Extensions.Configuration;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,7 +16,9 @@ namespace LightMessager
 
         private bool _disposed;
         private int _batch_size;
+        private ushort _prefetch_count;
         private IConnection _connection;
+        private IConnection _asynConnection;
 
         public bool IsDisposed { get { return _disposed; } }
 
@@ -27,6 +30,7 @@ namespace LightMessager
 
             var configuration = builder.Build();
             InitConnection(configuration);
+            InitAsyncConnection(configuration);
             InitChannelPool(configuration);
             InitOther(configuration);
         }
@@ -35,6 +39,13 @@ namespace LightMessager
         {
             var factory = GetConnectionFactory(configuration);
             _connection = factory.CreateConnection();
+        }
+
+        private void InitAsyncConnection(IConfigurationRoot configuration)
+        {
+            var factory = GetConnectionFactory(configuration);
+            factory.DispatchConsumersAsync = true;
+            _asynConnection = factory.CreateConnection();
         }
 
         private ConnectionFactory GetConnectionFactory(IConfigurationRoot configuration)
@@ -62,6 +73,7 @@ namespace LightMessager
         private void InitOther(IConfigurationRoot configuration)
         {
             _batch_size = 300;
+            _prefetch_count = 200;
         }
 
         public bool Send(TBody messageBody, string exchange, string routeKey)
@@ -97,6 +109,66 @@ namespace LightMessager
                 }
                 return await pooled.WaitForConfirmsAsync(sequence);
             }
+        }
+
+        public void Consume(string queue, Action<DeliverInfo> handler, bool autoAck = false)
+        {
+            if (string.IsNullOrEmpty(queue))
+                throw new ArgumentNullException(nameof(queue));
+
+            if (handler == null)
+                throw new ArgumentNullException(nameof(handler));
+
+            IModel channel = _connection.CreateModel();
+            IBasicConsumer consumer = SetupConsumer(channel, (model, ea) =>
+            {
+                var info = new DeliverInfo();
+                info.Body = new byte[ea.Body.Length];
+                Buffer.BlockCopy(ea.Body, 0, info.Body, 0, ea.Body.Length);
+                info.DeliveryTag = ea.DeliveryTag;
+                info.Redelivered = ea.Redelivered;
+                handler(info);
+            });
+            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicConsume(queue, autoAck, consumer);
+        }
+
+        public void Consume(string queue, Func<DeliverInfo, Task> handler, bool autoAck = false)
+        {
+            if (string.IsNullOrEmpty(queue))
+                throw new ArgumentNullException(nameof(queue));
+
+            if (handler == null)
+                throw new ArgumentNullException(nameof(handler));
+
+            IModel channel = _asynConnection.CreateModel();
+            IBasicConsumer consumer = SetupAsyncConsumer(channel, async (model, ea) =>
+            {
+                var info = new DeliverInfo();
+                info.Body = new byte[ea.Body.Length];
+                Buffer.BlockCopy(ea.Body, 0, info.Body, 0, ea.Body.Length);
+                info.DeliveryTag = ea.DeliveryTag;
+                info.Redelivered = ea.Redelivered;
+                await handler(info);
+            });
+            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicConsume(queue, autoAck, consumer);
+        }
+
+        private EventingBasicConsumer SetupConsumer(IModel channel, EventHandler<BasicDeliverEventArgs> handler)
+        {
+            var consumer = new EventingBasicConsumer(channel);
+            consumer.Received += handler;
+
+            return consumer;
+        }
+
+        private AsyncEventingBasicConsumer SetupAsyncConsumer(IModel channel, AsyncEventHandler<BasicDeliverEventArgs> handler)
+        {
+            var consumer = new AsyncEventingBasicConsumer(channel);
+            consumer.Received += handler;
+
+            return consumer;
         }
 
         public void Dispose()

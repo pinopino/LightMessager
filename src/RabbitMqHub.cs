@@ -26,8 +26,8 @@ namespace LightMessager
         private int _max_requeue;
         private int _max_republish;
         private int _min_delaysend;
-        private ushort _prefetch_count;
         private int _batch_size;
+        private ushort _prefetch_count;
         private IConnection _connection;
         private IConnection _asynConnection;
         private ConcurrentDictionary<string, QueueInfo> _send_queue;
