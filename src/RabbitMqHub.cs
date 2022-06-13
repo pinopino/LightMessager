@@ -4,9 +4,11 @@ using LightMessager.Track;
 using Microsoft.Extensions.Configuration;
 using NLog;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace LightMessager
 {
@@ -21,21 +23,102 @@ namespace LightMessager
     */
     public sealed partial class RabbitMqHub
     {
-        private static ObjectPool<IPooledWapper> _channel_pools;
+        public class Advance
+        {
+            private ushort _prefetch_count;
+            private IConnection _connection;
+            private IConnection _asynConnection;
+            public Advance(IConnection connection, IConnection asynConnection, ushort prefetchCount)
+            {
+                _connection = connection;
+                _asynConnection = asynConnection;
+                _prefetch_count = prefetchCount;
+            }
 
+            public void Send(object message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers = null)
+            {
+                using (var channel = _connection.CreateModel())
+                {
+                    var properties = channel.CreateBasicProperties();
+                    properties.Persistent = true;
+                    properties.Headers = headers;
+                    properties.ContentType = "text/plain";
+                    properties.DeliveryMode = 2;
+
+                    var json = Newtonsoft.Json.JsonConvert.SerializeObject(message);
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                    channel.BasicPublish(exchange,
+                                         routeKey,
+                                         mandatory,
+                                         properties,
+                                         bytes);
+                }
+            }
+
+            public void Consume(string queue, Action<object, BasicDeliverEventArgs> action)
+            {
+                var channel = _connection.CreateModel();
+                channel.BasicQos(0, _prefetch_count, false);
+                var consumer = new EventingBasicConsumer(channel);
+                consumer.Received += (model, ea) => action(model, ea);
+                channel.BasicConsume(queue, false, consumer);
+            }
+
+            public void Consume(string queue, Func<object, BasicDeliverEventArgs, Task> func)
+            {
+                var channel = _asynConnection.CreateModel();
+                channel.BasicQos(0, _prefetch_count, false);
+                var consumer = new AsyncEventingBasicConsumer(channel);
+                consumer.Received += async (model, ea) => await func(model, ea);
+                channel.BasicConsume(queue, false, consumer);
+            }
+
+            public void ExchangeDeclare(string exchange, string type, bool durable = true, IDictionary<string, object> arguments = null)
+            {
+                using (var channel = _connection.CreateModel())
+                {
+                    channel.ExchangeDeclare(exchange, type, durable, autoDelete: false, arguments);
+                }
+            }
+
+            public void QueueDeclare(string queue, bool durable = true, IDictionary<string, object> arguments = null)
+            {
+                using (var channel = _connection.CreateModel())
+                {
+                    channel.QueueDeclare(queue, durable, exclusive: false, autoDelete: false, arguments);
+                }
+            }
+
+            public void QueueBind(string queue, string exchange, string routeKey, IDictionary<string, object> arguments = null)
+            {
+                using (var channel = _connection.CreateModel())
+                {
+                    channel.QueueBind(queue, exchange, routeKey, arguments);
+                }
+            }
+        }
+
+        internal Lazy<ObjectPool<IPooledWapper>> _channel_pools;
+        internal ObjectPool<IPooledWapper> _confirmed_channel_pools;
         private int _max_requeue;
         private int _max_republish;
         private int _min_delaysend;
         private int _batch_size;
         private ushort _prefetch_count;
-        private IConnection _connection;
-        private IConnection _asynConnection;
+        internal bool _publish_confirm;
+        internal TimeSpan? _confirm_timeout;
+        internal IConnection _connection;
+        internal IConnection _asynConnection;
         private ConcurrentDictionary<string, QueueInfo> _send_queue;
         private ConcurrentDictionary<string, QueueInfo> _route_queue;
         private ConcurrentDictionary<string, bool> _send_dlx;
         private ConcurrentDictionary<string, bool> _route_dlx;
+        internal IMessageSendTracker _send_tracker;
+        internal IMessageRecvTracker _recv_tracker;
         private object _lockobj = new object();
         private Logger _logger = LogManager.GetLogger("RabbitMqHub");
+
+        public Advance Advanced { private set; get; }
 
         public RabbitMqHub()
         {
@@ -46,8 +129,9 @@ namespace LightMessager
             var configuration = builder.Build();
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitChannelPool(configuration);
+            InitChannelPool();
             InitOther(configuration);
+            InitAdvance();
         }
 
         public RabbitMqHub(IConfigurationRoot configuration)
@@ -57,8 +141,32 @@ namespace LightMessager
 
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitChannelPool(configuration);
+            InitChannelPool();
             InitOther(configuration);
+            InitAdvance();
+        }
+
+        public RabbitMqHub SetPublishConfirm(TimeSpan timeout = default)
+        {
+            _publish_confirm = true;
+            if (timeout != default)
+                _confirm_timeout = timeout;
+
+            InitConfirmedChannelPool();
+
+            return this;
+        }
+
+        public RabbitMqHub SetSendTracker(IMessageSendTracker sendTracker)
+        {
+            _send_tracker = sendTracker;
+            return this;
+        }
+
+        public RabbitMqHub SetRecvTracker(IMessageRecvTracker recvTracker)
+        {
+            _recv_tracker = recvTracker;
+            return this;
         }
 
         private void InitConnection(IConfigurationRoot configuration)
@@ -88,14 +196,21 @@ namespace LightMessager
             return factory;
         }
 
-        private void InitChannelPool(IConfigurationRoot configuration)
+        private void InitChannelPool()
         {
-            // 说明：注意这里使用的是_connection，后面可以考虑producer的channel走
-            // 自己的connection（甚至connection也可以池化掉）
             var cpu = Environment.ProcessorCount;
-            _channel_pools = new ObjectPool<IPooledWapper>(
-                p => new PooledChannel(_connection.CreateModel(), p, _connection),
-                cpu, cpu * 2);
+            _channel_pools = new Lazy<ObjectPool<IPooledWapper>>(() => new ObjectPool<IPooledWapper>(p => new PooledChannel(this), 4, cpu));
+        }
+
+        private void InitConfirmedChannelPool()
+        {
+            var cpu = Environment.ProcessorCount;
+            _confirmed_channel_pools = new ObjectPool<IPooledWapper>(p => new PooledChannel(this, publishConfirm: true), 4, cpu);
+        }
+
+        private void InitAdvance()
+        {
+            Advanced = new Advance(_connection, _asynConnection, _prefetch_count);
         }
 
         private void InitOther(IConfigurationRoot configuration)
@@ -109,6 +224,12 @@ namespace LightMessager
             _route_queue = new ConcurrentDictionary<string, QueueInfo>();
             _send_dlx = new ConcurrentDictionary<string, bool>();
             _route_dlx = new ConcurrentDictionary<string, bool>();
+        }
+
+        internal IPooledWapper GetChannel()
+        {
+            var pool = _publish_confirm ? _confirmed_channel_pools : _channel_pools.Value;
+            return pool.Get();
         }
 
         // send方式的生产端

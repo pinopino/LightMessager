@@ -26,10 +26,10 @@ namespace LightMessager.Track
             return false;
         }
 
-        public ValueTask<bool> TrackMessageAsync(Message message)
+        public Task<bool> TrackMessageAsync(Message message)
         {
             var ret = TrackMessage(message);
-            return new ValueTask<bool>(ret);
+            return Task.FromResult(ret);
         }
 
         public void SetStatus(Message message, RecvStatus newStatus, string remark = "")
@@ -43,10 +43,10 @@ namespace LightMessager.Track
             }
         }
 
-        public ValueTask SetStatusAsync(Message message, RecvStatus newStatus, string remark = "")
+        public Task SetStatusAsync(Message message, RecvStatus newStatus, string remark = "")
         {
             SetStatus(message, newStatus, remark);
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
     }
 }

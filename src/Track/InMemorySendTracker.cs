@@ -34,10 +34,10 @@ namespace LightMessager.Track
             message.DeliveryTag = deliveryTag;
         }
 
-        public ValueTask TrackMessageAsync(ulong deliveryTag, Message message)
+        public Task TrackMessageAsync(ulong deliveryTag, Message message)
         {
             TrackMessage(deliveryTag, message);
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
 
         public void SetStatus(ulong deliveryTag, SendStatus newStatus, string remark = "")
@@ -49,10 +49,10 @@ namespace LightMessager.Track
             }
         }
 
-        public ValueTask SetStatusAsync(ulong deliveryTag, SendStatus newStatus, string remark = "")
+        public Task SetStatusAsync(ulong deliveryTag, SendStatus newStatus, string remark = "")
         {
             SetStatus(deliveryTag, newStatus, remark);
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
 
         public void SetMultipleStatus(ulong deliveryTag, SendStatus newStatus)
@@ -66,10 +66,10 @@ namespace LightMessager.Track
             }
         }
 
-        public ValueTask SetMultipleStatusAsync(ulong deliveryTag, SendStatus newStatus)
+        public Task SetMultipleStatusAsync(ulong deliveryTag, SendStatus newStatus)
         {
             SetMultipleStatus(deliveryTag, newStatus);
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
 
         public void SetStatus(Message message, SendStatus newStatus, string remark = "")
@@ -83,10 +83,10 @@ namespace LightMessager.Track
             _errorMsgs.Enqueue(message);
         }
 
-        public ValueTask SetStatusAsync(Message message, SendStatus newStatus, string remark = "")
+        public Task SetStatusAsync(Message message, SendStatus newStatus, string remark = "")
         {
             SetStatus(message, newStatus, remark);
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
 
         public void Reset(string remark = "")
@@ -106,10 +106,10 @@ namespace LightMessager.Track
             }
         }
 
-        public ValueTask ResetAsync()
+        public Task ResetAsync()
         {
             Reset();
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
     }
 }

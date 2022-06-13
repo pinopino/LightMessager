@@ -18,36 +18,41 @@ namespace LightMessager
     {
         private static Logger _logger = LogManager.GetLogger("PooledChannel");
 
-        private readonly int _spinCount;
         private volatile int _reseting;
-        private IModel _innerChannel;
+        private readonly int _spinCount;
+        private readonly RabbitMqHub _rabbitMqHub;
         private IConnection _connection;
+        private IModel _innerChannel;
+        private Lazy<ObjectPool<IPooledWapper>> _pool;
+        private ObjectPool<IPooledWapper> _confirmed_pool;
         private IMessageSendTracker _tracker;
-        private ObjectPool<IPooledWapper> _pool;
         private ConcurrentDictionary<ulong, TaskCompletionSource<bool>> _awaitingCheckpoint;
 
         public IModel Channel { get { return this._innerChannel; } }
 
-        public PooledChannel(IModel channel, ObjectPool<IPooledWapper> pool, IConnection connection, bool track = true)
+        public PooledChannel(RabbitMqHub rabbitMqHub, bool publishConfirm = false)
         {
-            _pool = pool;
             _spinCount = 200;
-            if (track)
-                _tracker = new InMemorySendTracker();
-            else
-                _awaitingCheckpoint = new ConcurrentDictionary<ulong, TaskCompletionSource<bool>>();
-            _innerChannel = channel;
-            _connection = connection;
+            _rabbitMqHub = rabbitMqHub;
+            _connection = _rabbitMqHub._connection;
+            _innerChannel = _connection.CreateModel();
+            _pool = _rabbitMqHub._channel_pools;
+            _confirmed_pool = _rabbitMqHub._confirmed_channel_pools;
+            _tracker = _rabbitMqHub._send_tracker;
+            _awaitingCheckpoint = new ConcurrentDictionary<ulong, TaskCompletionSource<bool>>();
             InitChannel();
         }
 
         private void InitChannel()
         {
-            _innerChannel.ConfirmSelect();
-            _innerChannel.BasicAcks += Channel_BasicAcks;
-            _innerChannel.BasicNacks += Channel_BasicNacks;
-            _innerChannel.BasicReturn += Channel_BasicReturn;
-            _innerChannel.ModelShutdown += Channel_ModelShutdown;
+            if (_rabbitMqHub._publish_confirm)
+            {
+                _innerChannel.ConfirmSelect();
+                _innerChannel.BasicAcks += Channel_BasicAcks;
+                _innerChannel.BasicNacks += Channel_BasicNacks;
+                _innerChannel.BasicReturn += Channel_BasicReturn;
+                _innerChannel.ModelShutdown += Channel_ModelShutdown;
+            }
         }
 
         internal void Publish<TBody>(Message<TBody> message, string exchange, string routeKey)
@@ -64,12 +69,13 @@ namespace LightMessager
             InnerPublish(message, exchange, routeKey);
         }
 
-        internal async ValueTask<ulong> PublishReturnSeqAsync<TBody>(Message<TBody> message, string exchange, string routeKey)
+        internal async Task<ulong> PublishReturnSeqAsync<TBody>(Message<TBody> message, string exchange, string routeKey)
         {
             var sequence = _innerChannel.NextPublishSeqNo;
             if (_tracker != null)
                 await _tracker.TrackMessageAsync(sequence, message);
             InnerPublish(message, exchange, routeKey);
+
             return sequence;
         }
 
@@ -106,17 +112,29 @@ namespace LightMessager
 
         internal bool WaitForConfirms()
         {
-            return _innerChannel.WaitForConfirms(TimeSpan.FromSeconds(10));
+            if (_rabbitMqHub._publish_confirm)
+            {
+                var timeout = _rabbitMqHub._confirm_timeout.HasValue ?
+                    _rabbitMqHub._confirm_timeout.Value : TimeSpan.FromSeconds(10);
+                return _innerChannel.WaitForConfirms(timeout);
+            }
+
+            return true;
         }
 
         internal Task<bool> WaitForConfirmsAsync(ulong deliveryTag)
         {
-            while (_reseting > 0)
-                Thread.SpinWait(_spinCount);
+            if (_rabbitMqHub._publish_confirm)
+            {
+                while (_reseting > 0)
+                    Thread.SpinWait(_spinCount);
 
-            var tcs = new TaskCompletionSource<bool>();
-            _awaitingCheckpoint.TryAdd(deliveryTag, tcs);
-            return tcs.Task;
+                var tcs = new TaskCompletionSource<bool>();
+                _awaitingCheckpoint.TryAdd(deliveryTag, tcs);
+                return tcs.Task;
+            }
+
+            return Task.FromResult(true);
         }
 
         // 说明：broker正常接受到消息，会触发该ack事件
@@ -206,27 +224,51 @@ namespace LightMessager
         {
             if (disposing)
             {
-                // 清理托管资源
-                if (_pool.IsDisposed)
+                if (_rabbitMqHub._publish_confirm)
                 {
-                    _innerChannel.Dispose();
-                }
-                else
-                {
-                    // 说明：
-                    // channel层面的异常会导致channel关闭并且不可以再被使用，因此在配合
-                    // 池化策略时一种方式是捕获该异常并且创建一个新的channel以补充池中可用的channle；
-                    if (_innerChannel.IsClosed)
+                    // 清理托管资源
+                    if (_confirmed_pool.IsDisposed)
                     {
-                        _innerChannel = _connection.CreateModel();
-                        _tracker?.Reset($"Channel Shutdown，ReplyCode：{_innerChannel.CloseReason.ReplyCode}，ReplyText：{_innerChannel.CloseReason.ReplyText}");
-                        ClearCheckpoint();
-                        InitChannel();
-                        _pool.Put(this);
+                        _innerChannel.Dispose();
                     }
                     else
                     {
-                        _pool.Put(this);
+                        // 说明：
+                        // channel层面的异常会导致channel关闭并且不可以再被使用，因此在配合
+                        // 池化策略时一种方式是捕获该异常并且创建一个新的channel以补充池中可用的channle；
+                        if (_innerChannel.IsClosed)
+                        {
+                            _innerChannel = _connection.CreateModel();
+                            _tracker?.Reset($"Channel Shutdown，ReplyCode：{_innerChannel.CloseReason.ReplyCode}，ReplyText：{_innerChannel.CloseReason.ReplyText}");
+                            ClearCheckpoint();
+                            InitChannel();
+                            _confirmed_pool.Put(this);
+                        }
+                        else
+                        {
+                            _confirmed_pool.Put(this);
+                        }
+                    }
+                }
+                else
+                {
+                    // 清理托管资源
+                    if (_pool.Value.IsDisposed)
+                    {
+                        _innerChannel.Dispose();
+                    }
+                    else
+                    {
+                        if (_innerChannel.IsClosed)
+                        {
+                            _innerChannel = _connection.CreateModel();
+                            InitChannel();
+                            _pool.Value.Put(this);
+                        }
+                        else
+                        {
+                            _pool.Value.Put(this);
+                        }
                     }
                 }
             }

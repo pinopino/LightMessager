@@ -18,7 +18,7 @@ namespace LightMessager
         /// <returns>true发送成功，反之失败</returns>
         public bool Send<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
         {
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 var message = new Message<TBody>(messageBody);
                 if (string.IsNullOrEmpty(routeKey))
@@ -35,6 +35,7 @@ namespace LightMessager
                         EnsureRouteQueue(pooled.Channel, typeof(TBody), delaySend, out info);
                     pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                 }
+
                 return pooled.WaitForConfirms();
             }
         }
@@ -52,7 +53,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 QueueInfo info;
                 if (string.IsNullOrEmpty(routeKey))
@@ -102,7 +103,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 QueueInfo info;
                 var counter = 0;
@@ -131,9 +132,9 @@ namespace LightMessager
             }
         }
 
-        public async ValueTask<bool> SendAsync<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
+        public async Task<bool> SendAsync<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
         {
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 var sequence = 0ul;
                 var message = new Message<TBody>();
@@ -155,12 +156,12 @@ namespace LightMessager
             }
         }
 
-        public async ValueTask<bool> SendAsync<TBody>(IEnumerable<TBody> messageBodys, string routeKey = "", int delaySend = 0)
+        public async Task<bool> SendAsync<TBody>(IEnumerable<TBody> messageBodys, string routeKey = "", int delaySend = 0)
         {
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 QueueInfo info = null;
                 if (string.IsNullOrEmpty(routeKey))
@@ -192,7 +193,7 @@ namespace LightMessager
             }
         }
 
-        private async ValueTask<bool> SendAsync<TBody>(IEnumerable<TBody> messageBodys, Func<TBody, string> routeKeySelector, int delaySend = 0)
+        private async Task<bool> SendAsync<TBody>(IEnumerable<TBody> messageBodys, Func<TBody, string> routeKeySelector, int delaySend = 0)
         {
             if (routeKeySelector == null)
                 throw new ArgumentNullException("routeKeySelector");
@@ -200,7 +201,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 QueueInfo info = null;
                 var counter = 0;
@@ -232,7 +233,7 @@ namespace LightMessager
 
         public bool Publish<TBody>(TBody messageBody, int delaySend = 0)
         {
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
                 var message = new Message<TBody>(messageBody);
@@ -246,7 +247,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
 
@@ -263,9 +264,9 @@ namespace LightMessager
             }
         }
 
-        public async ValueTask<bool> PublishAsync<TBody>(TBody messageBody, int delaySend = 0)
+        public async Task<bool> PublishAsync<TBody>(TBody messageBody, int delaySend = 0)
         {
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 var sequence = 0ul;
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
@@ -275,12 +276,12 @@ namespace LightMessager
             }
         }
 
-        public async ValueTask<bool> PublishAsync<TBody>(IEnumerable<TBody> messageBodys, int delaySend = 0)
+        public async Task<bool> PublishAsync<TBody>(IEnumerable<TBody> messageBodys, int delaySend = 0)
         {
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = _channel_pools.Get() as PooledChannel)
+            using (var pooled = GetChannel() as PooledChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
 
