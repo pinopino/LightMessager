@@ -19,11 +19,9 @@ namespace LightMessager.Track
             _errorMsgs = new ConcurrentQueue<Message>();
         }
 
-        public void TrackMessage(ulong deliveryTag, Message message)
+        public Task TrackMessageAsync(ulong deliveryTag, Message message)
         {
-            // 说明：
-            // 
-            // 链接：
+            // 参考链接：
             // https://stackoverflow.com/questions/11099852/lock-vs-boolean
             // https://stackoverflow.com/questions/154551/volatile-vs-interlocked-vs-lock
             // https://docs.microsoft.com/en-us/dotnet/api/system.threading.interlocked.compareexchange
@@ -32,30 +30,22 @@ namespace LightMessager.Track
 
             _unconfirm.TryAdd(deliveryTag, message);
             message.DeliveryTag = deliveryTag;
-        }
 
-        public Task TrackMessageAsync(ulong deliveryTag, Message message)
-        {
-            TrackMessage(deliveryTag, message);
             return Task.CompletedTask;
         }
 
-        public void SetStatus(ulong deliveryTag, SendStatus newStatus, string remark = "")
+        public Task SetStatusAsync(ulong deliveryTag, SendStatus newStatus, string remark = "")
         {
             if (_unconfirm.TryGetValue(deliveryTag, out Message msg))
             {
                 msg.SendStatus = newStatus;
                 msg.Remark = remark;
             }
-        }
 
-        public Task SetStatusAsync(ulong deliveryTag, SendStatus newStatus, string remark = "")
-        {
-            SetStatus(deliveryTag, newStatus, remark);
             return Task.CompletedTask;
         }
 
-        public void SetMultipleStatus(ulong deliveryTag, SendStatus newStatus)
+        public Task SetMultipleStatusAsync(ulong deliveryTag, SendStatus newStatus, string remark = "")
         {
             foreach (var item in _unconfirm)
             {
@@ -64,32 +54,16 @@ namespace LightMessager.Track
                     item.Value.SendStatus = newStatus;
                 }
             }
-        }
 
-        public Task SetMultipleStatusAsync(ulong deliveryTag, SendStatus newStatus)
-        {
-            SetMultipleStatus(deliveryTag, newStatus);
             return Task.CompletedTask;
         }
 
-        public void SetStatus(Message message, SendStatus newStatus, string remark = "")
+        public Task SetErrorAsync(Message message, SendStatus newStatus, string remark = "")
         {
-            while (_reseting > 0)
-                Thread.SpinWait(_spinCount);
-            _unconfirm.TryRemove(message.DeliveryTag, out _);
-
-            message.SendStatus = newStatus;
-            message.Remark = remark;
-            _errorMsgs.Enqueue(message);
+            throw new System.NotImplementedException();
         }
 
-        public Task SetStatusAsync(Message message, SendStatus newStatus, string remark = "")
-        {
-            SetStatus(message, newStatus, remark);
-            return Task.CompletedTask;
-        }
-
-        public void Reset(string remark = "")
+        public Task ResetAsync(string remark = "")
         {
             Interlocked.Increment(ref _reseting);
             var old = _unconfirm;
@@ -104,11 +78,7 @@ namespace LightMessager.Track
                     _errorMsgs.Enqueue(item.Value);
                 }
             }
-        }
 
-        public Task ResetAsync()
-        {
-            Reset();
             return Task.CompletedTask;
         }
     }

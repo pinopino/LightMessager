@@ -18,7 +18,7 @@ namespace LightMessager
         /// <returns>true发送成功，反之失败</returns>
         public bool Send<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 var message = new Message<TBody>(messageBody);
                 if (string.IsNullOrEmpty(routeKey))
@@ -53,7 +53,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info;
                 if (string.IsNullOrEmpty(routeKey))
@@ -77,7 +77,7 @@ namespace LightMessager
                     else
                         pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
 
-                    if (++counter % _batch_size == 0)
+                    if (++counter % _batchSize == 0)
                         pooled.WaitForConfirms();
                 }
                 return pooled.WaitForConfirms();
@@ -103,7 +103,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info;
                 var counter = 0;
@@ -125,7 +125,7 @@ namespace LightMessager
                         pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                     }
 
-                    if (++counter % _batch_size == 0)
+                    if (++counter % _batchSize == 0)
                         pooled.WaitForConfirms();
                 }
                 return pooled.WaitForConfirms();
@@ -134,7 +134,7 @@ namespace LightMessager
 
         public async Task<bool> SendAsync<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 var sequence = 0ul;
                 var message = new Message<TBody>();
@@ -161,7 +161,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info = null;
                 if (string.IsNullOrEmpty(routeKey))
@@ -186,7 +186,7 @@ namespace LightMessager
                     else
                         sequence = await pooled.PublishReturnSeqAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
 
-                    if (++counter % _batch_size == 0)
+                    if (++counter % _batchSize == 0)
                         await pooled.WaitForConfirmsAsync(sequence);
                 }
                 return await pooled.WaitForConfirmsAsync(sequence);
@@ -201,7 +201,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info = null;
                 var counter = 0;
@@ -224,7 +224,7 @@ namespace LightMessager
                         sequence = await pooled.PublishReturnSeqAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, routeKey);
                     }
 
-                    if (++counter % _batch_size == 0)
+                    if (++counter % _batchSize == 0)
                         await pooled.WaitForConfirmsAsync(sequence);
                 }
                 return await pooled.WaitForConfirmsAsync(sequence);
@@ -233,7 +233,7 @@ namespace LightMessager
 
         public bool Publish<TBody>(TBody messageBody, int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
                 var message = new Message<TBody>(messageBody);
@@ -247,7 +247,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
 
@@ -257,7 +257,7 @@ namespace LightMessager
                     var message = new Message<TBody>(messageBody);
                     pooled.Publish(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
 
-                    if (++counter % _batch_size == 0)
+                    if (++counter % _batchSize == 0)
                         pooled.WaitForConfirms();
                 }
                 return pooled.WaitForConfirms();
@@ -266,7 +266,7 @@ namespace LightMessager
 
         public async Task<bool> PublishAsync<TBody>(TBody messageBody, int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 var sequence = 0ul;
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
@@ -281,7 +281,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledChannel)
+            using (var pooled = GetChannel() as PooledConfirmedChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
 
@@ -292,7 +292,7 @@ namespace LightMessager
                     var message = new Message<TBody>(messageBody);
                     sequence = await pooled.PublishReturnSeqAsync(message, delaySend == 0 ? info.Exchange : info.Delay_Exchange, string.Empty);
 
-                    if (++counter % _batch_size == 0)
+                    if (++counter % _batchSize == 0)
                         pooled.WaitForConfirms();
                 }
                 return await pooled.WaitForConfirmsAsync(sequence);

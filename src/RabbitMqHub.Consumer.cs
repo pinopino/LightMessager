@@ -17,12 +17,12 @@ namespace LightMessager
             IBasicConsumer consumer;
             if (!asyncConsumer)
             {
-                channel = _connection.CreateModel();
+                channel = connection.CreateModel();
                 consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
-                channel = _asynConnection.CreateModel();
+                channel = asynConnection.CreateModel();
                 consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
             /*
@@ -30,7 +30,7 @@ namespace LightMessager
               @param prefetchCount maximum number of messages that the server will deliver, 0 if unlimited
               @param global true if the settings should be applied to the entire channel rather than each consumer
             */
-            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicQos(0, _prefetchCount, false);
 
             EnsureSendQueue(channel, typeof(TBody), out QueueInfo info);
             channel.BasicConsume(info.Queue, false, consumer);
@@ -44,15 +44,15 @@ namespace LightMessager
             IBasicConsumer consumer;
             if (!asyncConsumer)
             {
-                channel = _connection.CreateModel();
+                channel = connection.CreateModel();
                 consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
-                channel = _asynConnection.CreateModel();
+                channel = asynConnection.CreateModel();
                 consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
-            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicQos(0, _prefetchCount, false);
 
             var useTopic = false;
             foreach (var key in subscribeKeys)
@@ -80,15 +80,15 @@ namespace LightMessager
             IBasicConsumer consumer;
             if (!asyncConsumer)
             {
-                channel = _connection.CreateModel();
+                channel = connection.CreateModel();
                 consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
-                channel = _asynConnection.CreateModel();
+                channel = asynConnection.CreateModel();
                 consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
-            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicQos(0, _prefetchCount, false);
 
             EnsurePublishQueue(channel, typeof(TBody), subscriber, out QueueInfo info);
             channel.BasicConsume(info.Queue, false, consumer);
