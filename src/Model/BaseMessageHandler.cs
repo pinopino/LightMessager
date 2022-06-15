@@ -15,10 +15,10 @@ namespace LightMessager.Model
         private int _maxRetry;
         private int _maxRequeue;
         private int _backoffMs;
-        protected IMessageRecvTracker _tracker;
+        internal InMemoryRecvTracker _tracker;
         protected Dictionary<string, int> _requeueCounter;
 
-        public IMessageRecvTracker Tracker => _tracker;
+        internal InMemoryRecvTracker Tracker => _tracker;
         public abstract bool Idempotent { get; }
 
         protected BaseMessageHandler()

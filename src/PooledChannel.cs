@@ -1,6 +1,5 @@
 ﻿using LightMessager.Common;
 using LightMessager.Model;
-using LightMessager.Track;
 using Newtonsoft.Json;
 using NLog;
 using RabbitMQ.Client;
@@ -19,15 +18,15 @@ namespace LightMessager
         private IConnection _connection;
         private IModel _innerChannel;
         private Lazy<ObjectPool<IPooledWapper>> _pool;
-        private IMessageSendTracker _tracker;
+        private RabbitMqHub _rabbitMqHub;
 
         public IModel Channel { get { return this._innerChannel; } }
 
         public PooledChannel(RabbitMqHub rabbitMqHub)
         {
+            _rabbitMqHub = rabbitMqHub;
             _connection = rabbitMqHub.connection;
             _pool = rabbitMqHub.channelPools;
-            _tracker = rabbitMqHub.sendTracker;
             InitChannel();
         }
 
@@ -39,17 +38,17 @@ namespace LightMessager
 
         internal void Publish<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers)
         {
-            _tracker?.TrackMessageAsync(_innerChannel.NextPublishSeqNo, message).Wait();
-            InnerPublish(message, exchange, routeKey, mandatory, headers).Wait();
+            _rabbitMqHub.OnMessageSending(_innerChannel.NextPublishSeqNo, message);
+            InnerPublish(message, exchange, routeKey, mandatory, headers);
         }
 
-        internal async Task PublishAsync<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers)
+        internal Task PublishAsync<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers)
         {
-            await _tracker?.TrackMessageAsync(_innerChannel.NextPublishSeqNo, message);
-            await InnerPublish(message, exchange, routeKey, mandatory, headers);
+            _rabbitMqHub.OnMessageSending(_innerChannel.NextPublishSeqNo, message);
+            return Task.Factory.StartNew(() => InnerPublish(message, exchange, routeKey, mandatory, headers));
         }
 
-        private async Task InnerPublish<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers)
+        private void InnerPublish<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers)
         {
             var json = JsonConvert.SerializeObject(message);
             var bytes = Encoding.UTF8.GetBytes(json);
@@ -65,16 +64,16 @@ namespace LightMessager
             catch (OperationInterruptedException ex)
             {
                 if (ex.ShutdownReason.ReplyCode == 404)
-                    await _tracker?.SetErrorAsync(message, SendStatus.NoExchangeFound, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSend(message, SendStatus.NoExchangeFound, remark: ex.Message);
                 else
-                    await _tracker?.SetErrorAsync(message, SendStatus.Failed, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSend(message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;
             }
             catch (Exception ex)
             {
-                _tracker?.SetErrorAsync(message, SendStatus.Failed, remark: ex.Message);
+                _rabbitMqHub.OnMessageSend(message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;

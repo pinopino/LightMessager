@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 
-namespace LightMessager
+namespace LightMessager.Model
 {
     /// <summary>
     /// 因为rabbitmq返回消息confirm信息的特殊性，这里采用了类似链表的数据结构
@@ -43,7 +43,7 @@ namespace LightMessager
             }
         }
 
-        public void Check(ulong deliveryTag)
+        public void CheckUpTo(ulong deliveryTag)
         {
             Node pre = null;
             Node current = head;
@@ -65,6 +65,28 @@ namespace LightMessager
             while (current != null)
             {
                 current.Tcs.SetResult(true);
+                current = current.Next;
+            }
+        }
+
+        public void Check(ulong deliveryTag)
+        {
+            Node pre = null;
+            Node current = head;
+            while (current != null)
+            {
+                if (deliveryTag == current.DeliveryTag)
+                {
+                    current.Tcs.SetResult(true);
+                    if (pre == null)
+                    {
+                        head = null;
+                        break;
+                    }
+                    pre.Next = current.Next;
+                    break;
+                }
+                pre = current;
                 current = current.Next;
             }
         }

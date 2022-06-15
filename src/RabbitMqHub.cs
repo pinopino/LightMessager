@@ -1,6 +1,5 @@
 ﻿using LightMessager.Common;
 using LightMessager.Model;
-using LightMessager.Track;
 using Microsoft.Extensions.Configuration;
 using NLog;
 using RabbitMQ.Client;
@@ -104,18 +103,18 @@ namespace LightMessager
             }
         }
 
+        private Logger _logger = LogManager.GetLogger("RabbitMqHub");
+
         private int _maxRequeue;
         private int _maxRepublish;
         private int _minDelaySend;
         private int _batchSize;
         private ushort _prefetchCount;
-
         private ConcurrentDictionary<string, QueueInfo> _sendQueue;
         private ConcurrentDictionary<string, QueueInfo> _routeQueue;
         private ConcurrentDictionary<string, bool> _sendDlx;
         private ConcurrentDictionary<string, bool> _routeDlx;
         private object _lockObj = new object();
-        private Logger _logger = LogManager.GetLogger("RabbitMqHub");
 
         internal Lazy<ObjectPool<IPooledWapper>> channelPools;
         internal ObjectPool<IPooledWapper> confirmedChannelPools;
@@ -123,10 +122,16 @@ namespace LightMessager
         internal TimeSpan? confirmTimeout;
         internal IConnection connection;
         internal IConnection asynConnection;
-        internal IMessageSendTracker sendTracker;
-        internal IMessageRecvTracker recvTracker;
 
         public Advance Advanced { private set; get; }
+        // TODO：async event
+        //
+        // 参考链接：
+        // https://stackoverflow.com/questions/19415646/should-i-avoid-async-void-event-handlers
+        // https://stackoverflow.com/questions/12451609/how-to-await-raising-an-eventhandler-event
+        public event EventHandler<MessageSendEventArgs> BeforeMessageSend;
+        public event EventHandler<MessageSendEventArgs> MessageSendOK;
+        public event EventHandler<MessageSendEventArgs> MessageSendFailed;
 
         public RabbitMqHub()
         {
@@ -165,16 +170,64 @@ namespace LightMessager
             return this;
         }
 
-        public RabbitMqHub SetSendTracker(IMessageSendTracker sendTracker)
+        internal void OnMessageSending(ulong nextPublishSeqNo, in Message message)
         {
-            this.sendTracker = sendTracker;
-            return this;
+            // Make a temporary copy of the event to avoid possibility of
+            // a race condition if the last subscriber unsubscribes
+            // immediately after the null check and before the event is raised.
+            // 下同。
+            var raiseEvent = BeforeMessageSend;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                DeliveryTag = nextPublishSeqNo,
+                SendStatus = SendStatus.PendingResponse,
+                Message = message
+            });
         }
 
-        public RabbitMqHub SetRecvTracker(IMessageRecvTracker recvTracker)
+        internal void OnMessageSend(in Message message, SendStatus newStatus, string remark = "")
         {
-            this.recvTracker = recvTracker;
-            return this;
+            var raiseEvent = MessageSendFailed;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = newStatus,
+                Message = message,
+                Remark = remark
+            });
+        }
+
+        internal void OnChannelBasicAcks(object sender, BasicAckEventArgs e)
+        {
+            var raiseEvent = MessageSendOK;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = SendStatus.Confirmed,
+                DeliveryTag = e.DeliveryTag,
+                Multiple = e.Multiple
+            });
+        }
+
+        internal void OnChannelBasicNacks(object sender, BasicNackEventArgs e)
+        {
+            var raiseEvent = MessageSendFailed;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = SendStatus.Nacked,
+                DeliveryTag = e.DeliveryTag,
+                Multiple = e.Multiple
+            });
+        }
+
+        internal void OnChannelBasicReturn(object sender, BasicReturnEventArgs e)
+        {
+            var raiseEvent = MessageSendFailed;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = SendStatus.Unroutable,
+                ReplyCode = e.ReplyCode,
+                ReplyText = e.ReplyText,
+                Remark = $"try to push to exchange[{e.Exchange}] with routekey[{e.RoutingKey}]"
+            });
         }
 
         private void InitConnection(IConfigurationRoot configuration)

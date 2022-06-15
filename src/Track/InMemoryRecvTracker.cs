@@ -4,7 +4,10 @@ using System.Threading.Tasks;
 
 namespace LightMessager.Track
 {
-    public sealed class InMemoryRecvTracker : IMessageRecvTracker
+    /// <summary>
+    /// for debug only
+    /// </summary>
+    internal sealed class InMemoryRecvTracker
     {
         private ConcurrentDictionary<string, Message> _msgList; // <MsgId, Msg>
         private ConcurrentQueue<Message> _errorMsgs;

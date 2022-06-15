@@ -5,7 +5,10 @@ using System.Threading.Tasks;
 
 namespace LightMessager.Track
 {
-    public sealed class InMemorySendTracker : IMessageSendTracker
+    /// <summary>
+    /// for debug only
+    /// </summary>
+    internal sealed class InMemorySendTracker
     {
         private readonly int _spinCount;
         private volatile int _reseting;
@@ -21,10 +24,6 @@ namespace LightMessager.Track
 
         public Task TrackMessageAsync(ulong deliveryTag, Message message)
         {
-            // 参考链接：
-            // https://stackoverflow.com/questions/11099852/lock-vs-boolean
-            // https://stackoverflow.com/questions/154551/volatile-vs-interlocked-vs-lock
-            // https://docs.microsoft.com/en-us/dotnet/api/system.threading.interlocked.compareexchange
             while (_reseting > 0)
                 Thread.SpinWait(_spinCount);
 
