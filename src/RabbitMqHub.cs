@@ -1,4 +1,5 @@
 ﻿using LightMessager.Common;
+using LightMessager.Exceptions;
 using LightMessager.Model;
 using Microsoft.Extensions.Configuration;
 using NLog;
@@ -7,6 +8,7 @@ using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace LightMessager
@@ -39,21 +41,66 @@ namespace LightMessager
                 }
             }
 
-            public void Consume(string queue, Action<object, BasicDeliverEventArgs> action)
+            public async Task SendAsync<TBody>(TBody messageBody, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers = null)
+            {
+                using (var pooled = _rabbitMqHub.GetChannel() as PooledChannel)
+                {
+                    var message = new Message<TBody>(messageBody);
+                    await pooled.PublishAsync(message, exchange, routeKey, mandatory, headers);
+                }
+            }
+
+            public void Consume(string queue, Action<object, BasicDeliverEventArgs> action, bool requeue = false)
             {
                 var channel = _rabbitMqHub.connection.CreateModel();
                 channel.BasicQos(0, _rabbitMqHub._prefetchCount, false);
                 var consumer = new EventingBasicConsumer(channel);
-                consumer.Received += (model, ea) => action(model, ea);
+                consumer.Received += (model, ea) =>
+                {
+                    var msgId = ea.BasicProperties.MessageId;
+                    try
+                    {
+                        var json = Encoding.UTF8.GetString(ea.Body);
+                        _rabbitMqHub.OnMessageReceived(msgId, json);
+                        action(model, ea);
+                        _rabbitMqHub.OnMessageConsumeOK(msgId);
+                        channel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (LightMessagerException ex)
+                    {
+                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
+                        channel.BasicNack(ea.DeliveryTag, false, requeue);
+                    }
+                    catch (Exception ex)
+                    {
+                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
+                    }
+                };
                 channel.BasicConsume(queue, false, consumer);
             }
 
-            public void Consume(string queue, Func<object, BasicDeliverEventArgs, Task> func)
+            public void Consume(string queue, Func<object, BasicDeliverEventArgs, Task> func, bool requeue = false)
             {
                 var channel = _rabbitMqHub.asynConnection.CreateModel();
                 channel.BasicQos(0, _rabbitMqHub._prefetchCount, false);
                 var consumer = new AsyncEventingBasicConsumer(channel);
-                consumer.Received += async (model, ea) => await func(model, ea);
+                consumer.Received += async (model, ea) =>
+                {
+                    var msgId = ea.BasicProperties.MessageId;
+                    try
+                    {
+                        var json = Encoding.UTF8.GetString(ea.Body);
+                        _rabbitMqHub.OnMessageReceived(msgId, json);
+                        await func(model, ea);
+                        _rabbitMqHub.OnMessageConsumeOK(msgId);
+                        channel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
+                        channel.BasicNack(ea.DeliveryTag, false, requeue);
+                    }
+                };
                 channel.BasicConsume(queue, false, consumer);
             }
 
@@ -126,12 +173,17 @@ namespace LightMessager
         public Advance Advanced { private set; get; }
         // TODO：async event
         //
-        // 参考链接：
+        // links：
         // https://stackoverflow.com/questions/19415646/should-i-avoid-async-void-event-handlers
         // https://stackoverflow.com/questions/12451609/how-to-await-raising-an-eventhandler-event
-        public event EventHandler<MessageSendEventArgs> BeforeMessageSend;
+        // send
+        public event EventHandler<MessageSendEventArgs> MessageSending;
         public event EventHandler<MessageSendEventArgs> MessageSendOK;
         public event EventHandler<MessageSendEventArgs> MessageSendFailed;
+        // recv/consume
+        public event EventHandler<MessageConsumeEventArgs> MessageReceived;
+        public event EventHandler<MessageConsumeEventArgs> MessageConsumeOK;
+        public event EventHandler<MessageConsumeEventArgs> MessageConsumeFailed;
 
         public RabbitMqHub()
         {
@@ -176,7 +228,7 @@ namespace LightMessager
             // a race condition if the last subscriber unsubscribes
             // immediately after the null check and before the event is raised.
             // 下同。
-            var raiseEvent = BeforeMessageSend;
+            var raiseEvent = MessageSending;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
             {
                 DeliveryTag = nextPublishSeqNo,
@@ -227,6 +279,38 @@ namespace LightMessager
                 ReplyCode = e.ReplyCode,
                 ReplyText = e.ReplyText,
                 Remark = $"try to push to exchange[{e.Exchange}] with routekey[{e.RoutingKey}]"
+            });
+        }
+
+        internal void OnMessageReceived(string msgId, string msgJson)
+        {
+            var raiseEvent = MessageReceived;
+            raiseEvent?.Invoke(null, new MessageConsumeEventArgs
+            {
+                ConsumeStatus = ConsumeStatus.Received,
+                MessageId = msgId,
+                MessageJson = msgJson
+            });
+        }
+
+        internal void OnMessageConsumeOK(string msgId)
+        {
+            var raiseEvent = MessageConsumeOK;
+            raiseEvent?.Invoke(null, new MessageConsumeEventArgs
+            {
+                ConsumeStatus = ConsumeStatus.Consumed,
+                MessageId = msgId
+            });
+        }
+
+        internal void OnMessageConsumeFailed(string msgId, string remark = "")
+        {
+            var raiseEvent = MessageConsumeFailed;
+            raiseEvent?.Invoke(null, new MessageConsumeEventArgs
+            {
+                ConsumeStatus = ConsumeStatus.Failed,
+                MessageId = msgId,
+                Remark = remark
             });
         }
 

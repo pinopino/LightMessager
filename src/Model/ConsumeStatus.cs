@@ -1,6 +1,6 @@
 ﻿namespace LightMessager.Model
 {
-    public enum RecvStatus
+    public enum ConsumeStatus
     {
         Received,
         Consumed,

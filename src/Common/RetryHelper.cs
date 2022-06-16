@@ -57,12 +57,12 @@ namespace LightMessager.Common
                 catch (Exception ex)
                 {
                     if (retryCount >= maxRetry)
-                        throw new Exception<LightMessagerExceptionArgs>(new LightMessagerExceptionArgs(), ErrorMessage1, ex);
+                        throw new LightMessagerException(ErrorMessage1, ex);
 
                     if (shouldRetry?.Invoke(ex) == true)
                         _logger.Warn(ex, string.Format(WarningMessage2, retryCount, maxRetry));
                     else
-                        throw new Exception<LightMessagerExceptionArgs>(new LightMessagerExceptionArgs(), ErrorMessage2, ex);
+                        throw new LightMessagerException(ErrorMessage2, ex);
 
                     // 间隔一段时间+随机扰乱
                     var jitter = RandomUtil.Random.Next(0, 100);
@@ -96,12 +96,12 @@ namespace LightMessager.Common
                 catch (Exception ex)
                 {
                     if (retryCount >= maxRetry)
-                        throw new Exception<LightMessagerExceptionArgs>(new LightMessagerExceptionArgs(), ErrorMessage1, ex);
+                        throw new LightMessagerException(ErrorMessage1, ex);
 
                     if (shouldRetry?.Invoke(ex) == true)
                         _logger.Warn(ex, string.Format(WarningMessage2, retryCount, maxRetry));
                     else
-                        throw new Exception<LightMessagerExceptionArgs>(new LightMessagerExceptionArgs(), ErrorMessage2, ex);
+                        throw new LightMessagerException(ErrorMessage2, ex);
 
                     // 间隔一段时间+随机扰乱
                     var jitter = RandomUtil.Random.Next(0, 100);

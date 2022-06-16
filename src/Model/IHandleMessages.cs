@@ -11,11 +11,11 @@ namespace LightMessager.Model
     //     of a specific type
     public interface IHandleMessages<TBody> : IHandleMessages
     {
-        bool Handle(Message<TBody> message, bool redelivered);
+        bool Handle(Message<TBody> message);
 
         //
         // 摘要:
         //     This method will be invoked with a message of type TMessage
-        Task<bool> HandleAsync(Message<TBody> message, bool redelivered);
+        Task<bool> HandleAsync(Message<TBody> message);
     }
 }

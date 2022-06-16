@@ -28,7 +28,7 @@ namespace LightMessager.Model
 
         public SendStatus SendStatus { set; get; }
 
-        public RecvStatus RecvStatus { set; get; }
+        public ConsumeStatus ConsumeStatus { set; get; }
 
         internal abstract object GetBody();
 

@@ -113,7 +113,7 @@ namespace LightMessager
 
         internal Task<bool> WaitForConfirmsAsync(ulong deliveryTag)
         {
-            // 参考链接：
+            // links：
             // https://stackoverflow.com/questions/11099852/lock-vs-boolean
             // https://stackoverflow.com/questions/154551/volatile-vs-interlocked-vs-lock
             // https://docs.microsoft.com/en-us/dotnet/api/system.threading.interlocked.compareexchange

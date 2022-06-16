@@ -13,6 +13,8 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TBody>
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.rabbitMqHub = this;
+
             IModel channel;
             IBasicConsumer consumer;
             if (!asyncConsumer)
@@ -40,6 +42,8 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TBody>
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.rabbitMqHub = this;
+
             IModel channel;
             IBasicConsumer consumer;
             if (!asyncConsumer)
@@ -76,6 +80,8 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TBody>
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.rabbitMqHub = this;
+
             IModel channel;
             IBasicConsumer consumer;
             if (!asyncConsumer)
@@ -104,12 +110,17 @@ namespace LightMessager
             var consumer = new EventingBasicConsumer(channel);
             consumer.Received += (model, ea) =>
             {
+                var msgId = ea.BasicProperties.MessageId;
                 var json = Encoding.UTF8.GetString(ea.Body);
+                OnMessageReceived(msgId, json);
+
                 var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
-                if (handler.Handle(msg, ea.Redelivered))
+                if (handler.Handle(msg))
                     channel.BasicAck(ea.DeliveryTag, false);
                 else
                     channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
+
+                OnMessageConsumeOK(msgId);
             };
 
             return consumer;
@@ -122,12 +133,17 @@ namespace LightMessager
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.Received += async (model, ea) =>
             {
+                var msgId = ea.BasicProperties.MessageId;
                 var json = Encoding.UTF8.GetString(ea.Body);
+                OnMessageReceived(msgId, json);
+
                 var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
-                if (await handler.HandleAsync(msg, ea.Redelivered))
+                if (await handler.HandleAsync(msg))
                     channel.BasicAck(ea.DeliveryTag, false);
                 else
                     channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
+
+                OnMessageConsumeOK(msgId);
             };
 
             return consumer;

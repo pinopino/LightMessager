@@ -22,7 +22,7 @@ namespace LightMessager.Track
         {
             if (_msgList.TryAdd(message.MsgId, message))
             {
-                message.RecvStatus = RecvStatus.Received;
+                message.ConsumeStatus = ConsumeStatus.Received;
                 return true;
             }
 
@@ -35,18 +35,18 @@ namespace LightMessager.Track
             return Task.FromResult(ret);
         }
 
-        public void SetStatus(Message message, RecvStatus newStatus, string remark = "")
+        public void SetStatus(Message message, ConsumeStatus newStatus, string remark = "")
         {
             _msgList.TryGetValue(message.MsgId, out Message trackedMsg);
-            trackedMsg.RecvStatus = newStatus;
+            trackedMsg.ConsumeStatus = newStatus;
             trackedMsg.Remark = remark;
-            if (newStatus == RecvStatus.Failed)
+            if (newStatus == ConsumeStatus.Failed)
             {
                 _errorMsgs.Enqueue(trackedMsg);
             }
         }
 
-        public Task SetStatusAsync(Message message, RecvStatus newStatus, string remark = "")
+        public Task SetStatusAsync(Message message, ConsumeStatus newStatus, string remark = "")
         {
             SetStatus(message, newStatus, remark);
             return Task.CompletedTask;
