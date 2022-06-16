@@ -13,16 +13,18 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TBody>
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.rabbitMqHub = this;
+
             IModel channel;
             IBasicConsumer consumer;
             if (!asyncConsumer)
             {
-                channel = _connection.CreateModel();
+                channel = connection.CreateModel();
                 consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
-                channel = _asynConnection.CreateModel();
+                channel = asynConnection.CreateModel();
                 consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
             /*
@@ -30,7 +32,7 @@ namespace LightMessager
               @param prefetchCount maximum number of messages that the server will deliver, 0 if unlimited
               @param global true if the settings should be applied to the entire channel rather than each consumer
             */
-            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicQos(0, _prefetchCount, false);
 
             EnsureSendQueue(channel, typeof(TBody), out QueueInfo info);
             channel.BasicConsume(info.Queue, false, consumer);
@@ -40,19 +42,21 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TBody>
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.rabbitMqHub = this;
+
             IModel channel;
             IBasicConsumer consumer;
             if (!asyncConsumer)
             {
-                channel = _connection.CreateModel();
+                channel = connection.CreateModel();
                 consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
-                channel = _asynConnection.CreateModel();
+                channel = asynConnection.CreateModel();
                 consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
-            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicQos(0, _prefetchCount, false);
 
             var useTopic = false;
             foreach (var key in subscribeKeys)
@@ -76,19 +80,21 @@ namespace LightMessager
             where THandler : BaseMessageHandler<TBody>
         {
             var handler = Activator.CreateInstance(typeof(THandler)) as THandler;
+            handler.rabbitMqHub = this;
+
             IModel channel;
             IBasicConsumer consumer;
             if (!asyncConsumer)
             {
-                channel = _connection.CreateModel();
+                channel = connection.CreateModel();
                 consumer = SetupConsumer<TBody, THandler>(channel, handler);
             }
             else
             {
-                channel = _asynConnection.CreateModel();
+                channel = asynConnection.CreateModel();
                 consumer = SetupAsyncConsumer<TBody, THandler>(channel, handler);
             }
-            channel.BasicQos(0, _prefetch_count, false);
+            channel.BasicQos(0, _prefetchCount, false);
 
             EnsurePublishQueue(channel, typeof(TBody), subscriber, out QueueInfo info);
             channel.BasicConsume(info.Queue, false, consumer);
@@ -104,12 +110,17 @@ namespace LightMessager
             var consumer = new EventingBasicConsumer(channel);
             consumer.Received += (model, ea) =>
             {
+                var msgId = ea.BasicProperties.MessageId;
                 var json = Encoding.UTF8.GetString(ea.Body);
+                OnMessageReceived(msgId, json);
+
                 var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
-                if (handler.Handle(msg, ea.Redelivered))
+                if (handler.Handle(msg))
                     channel.BasicAck(ea.DeliveryTag, false);
                 else
                     channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
+
+                OnMessageConsumeOK(msgId);
             };
 
             return consumer;
@@ -122,12 +133,17 @@ namespace LightMessager
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.Received += async (model, ea) =>
             {
+                var msgId = ea.BasicProperties.MessageId;
                 var json = Encoding.UTF8.GetString(ea.Body);
+                OnMessageReceived(msgId, json);
+
                 var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
-                if (await handler.HandleAsync(msg, ea.Redelivered))
+                if (await handler.HandleAsync(msg))
                     channel.BasicAck(ea.DeliveryTag, false);
                 else
                     channel.BasicNack(ea.DeliveryTag, false, msg.NeedRequeue);
+
+                OnMessageConsumeOK(msgId);
             };
 
             return consumer;

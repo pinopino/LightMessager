@@ -1,7 +1,6 @@
 ﻿using LightMessager.Common;
 using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
 
 namespace LightMessager.Model
 {
@@ -20,18 +19,16 @@ namespace LightMessager.Model
 
         public virtual string MsgId => _id.Value;
 
-        public Dictionary<string, object> Headers { protected set; get; }
-
         internal ulong DeliveryTag { set; get; }
 
-        [JsonIgnore]
         // 说明：消息的每次处理我们都需要判断是否需要重新入队列，
         // 因此它不应该随着消息的序列化而序列化
+        [JsonIgnore]
         internal bool NeedRequeue { set; get; }
 
         public SendStatus SendStatus { set; get; }
 
-        public RecvStatus RecvStatus { set; get; }
+        public ConsumeStatus ConsumeStatus { set; get; }
 
         internal abstract object GetBody();
 
@@ -53,13 +50,7 @@ namespace LightMessager.Model
             Body = body;
         }
 
-        public Message(TBody body, Dictionary<string, object> headers)
-        {
-            Body = body;
-            Headers = headers;
-        }
-
-        public override string MsgId 
+        public override string MsgId
         {
             get
             {

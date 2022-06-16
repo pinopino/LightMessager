@@ -4,7 +4,10 @@ using System.Threading.Tasks;
 
 namespace LightMessager.Track
 {
-    public sealed class InMemoryRecvTracker : IMessageRecvTracker
+    /// <summary>
+    /// for debug only
+    /// </summary>
+    internal sealed class InMemoryRecvTracker
     {
         private ConcurrentDictionary<string, Message> _msgList; // <MsgId, Msg>
         private ConcurrentQueue<Message> _errorMsgs;
@@ -19,34 +22,34 @@ namespace LightMessager.Track
         {
             if (_msgList.TryAdd(message.MsgId, message))
             {
-                message.RecvStatus = RecvStatus.Received;
+                message.ConsumeStatus = ConsumeStatus.Received;
                 return true;
             }
 
             return false;
         }
 
-        public ValueTask<bool> TrackMessageAsync(Message message)
+        public Task<bool> TrackMessageAsync(Message message)
         {
             var ret = TrackMessage(message);
-            return new ValueTask<bool>(ret);
+            return Task.FromResult(ret);
         }
 
-        public void SetStatus(Message message, RecvStatus newStatus, string remark = "")
+        public void SetStatus(Message message, ConsumeStatus newStatus, string remark = "")
         {
             _msgList.TryGetValue(message.MsgId, out Message trackedMsg);
-            trackedMsg.RecvStatus = newStatus;
+            trackedMsg.ConsumeStatus = newStatus;
             trackedMsg.Remark = remark;
-            if (newStatus == RecvStatus.Failed)
+            if (newStatus == ConsumeStatus.Failed)
             {
                 _errorMsgs.Enqueue(trackedMsg);
             }
         }
 
-        public ValueTask SetStatusAsync(Message message, RecvStatus newStatus, string remark = "")
+        public Task SetStatusAsync(Message message, ConsumeStatus newStatus, string remark = "")
         {
             SetStatus(message, newStatus, remark);
-            return new ValueTask(Task.CompletedTask);
+            return Task.CompletedTask;
         }
     }
 }

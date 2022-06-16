@@ -1,8 +1,8 @@
 # LightMessager
 一个针对RabbitMQ的简单封装类
 
-### 基本概念
-#### exchange
+## 基本概念
+### exchange
 一条消息的转发是由*exchange*的类型和具体的转发规则（*bindings*）共同决定的
 + **类型**
     + ***direct***：msg的routekey跟queue绑定的routekey一致，则直接转发
@@ -16,14 +16,14 @@
     + *auto-delete* 
     + *arguments*（optional; used by plugins and broker-specific features such as message TTL, queue length limit, etc）
 
-#### queue
+### queue
 + **重要的属性**
     + *name*
     + *durability*（一个durable的queue可以从broker的重启中存活下来）
     + *auto-delete*
     + *arguments*
 
-#### message
+### message
 + **可设置的属性**
     + *Content type*
     + *Content encoding* 
@@ -38,19 +38,30 @@
   
 + 同时注意mandatory和persistent的区别，前者会在消息无法送达的情况下触发basic.return事件，后者则是会让消息持久化至磁盘
 
-### 线程模型
-在线程模型上，主要考虑两个类型`Connection`和`Channle`。
-> Connections and Channels are meant to be long-lived. 
+## 线程模型
+在线程模型上，主要考虑两个类型`Connection`和`Channel`。
+
+### connection
+represents an AMQP 0-9-1 connection
+
+> Connections are meant to be long-lived. Opening a connection for every operation (e.g. publishing a message) would be very inefficient and is highly discouraged.
+
+### channel
+some applications need multiple logical connections to the broker. However, it is undesirable to keep many TCP connections open at the same time because doing so consumes system resources and makes it more difficult to configure firewalls. AMQP 0-9-1 connections are multiplexed with channels that can be thought of as "lightweight connections that share a single TCP connection".
+
+在channel层面更容易出现各种问题导致channel关闭（connection相对来说要稳定一些），因此考虑对channel池化进而达到复用的目的比较可取。
+
+> Just like connections, channels are meant to be long-lived. Opening a new channel for every operation would be highly inefficient and is highly discouraged. Channels, however, can have a shorter life span than connections.
+> 
+> Channel-level exceptions such as attempts to consume from a queue that does not exist will result in channel closure. A closed channel can no longer be used and will not receive any more events from the server。
 
 在当前版本（5.x）的c#客户端中，一个connection对应着一个线程（即IO线程），抽象的是一个tcp连接而多个channel通过多路复用共用一个connection。
 
 一种常见的策略是应用层面一个线程分配一个独立的channel通过共用一个connection与服务端进行交互。
 > 注意channel是非线程安全的，这意味着如果真的需要多个线程共用一个channel的话需要自己做加锁保护
 
-在channel层面更容易出现各种问题导致channel关闭（connection相对来说要稳定一些），因此考虑对channel池化进而达到复用的目的比较可取。
-> Channel-level exceptions such as attempts to consume from a queue that does not exist will result in channel closure. A closed channel can no longer be used and will not receive any more events from the server。
-
-最后一个与线程模型息息相关的概念是 ***消息处理顺序***。rabbitmq c#客户端采用线程池来处理消息到达时的回调（[链接](https://www.rabbitmq.com/consumers.html)），同时客户端保证了在单个channel上消息的[处理顺序]（与发送顺序一致，[链接](https://www.rabbitmq.com/dotnet-api-guide.html)）。
+### 消息处理顺序
+最后一个与线程模型息息相关的概念是 ***消息处理顺序***。rabbitmq c#客户端采用线程池来处理消息到达时的回调（[链接](https://www.rabbitmq.com/consumers.html)），同时客户端保证了在单个channel上消息的处理顺序（与发送顺序一致，[链接](https://www.rabbitmq.com/dotnet-api-guide.html)）。
 
 默认情况下回调是由TaskScheduler来处理的，不过好在rabbitmq留了一个口子，我们也可以插入自己的scheduler实现来保证更严格的执行顺序：
 ```csharp
@@ -74,7 +85,7 @@ var consumer = new AsyncEventingBasicConsumer(channel);
 consumer.Received += Consumer_Received;
 ```
 
-### 自动恢复
+## 自动恢复
 rabbitmq自带有`automatic recovery`特性，能在网络发生异常时进行自我恢复。这包括连接的恢复和网络拓扑（`topology`：_queues_、_exchanges_、_bindings_ and _consumers_）的恢复。前者通过指定`AutomaticRecoveryEnabled`属性值来控制，后者则是`TopologyRecoveryEnabled`。
 
 通常来说可能导致automatic recovery的事件有：
@@ -96,8 +107,8 @@ rabbitmq对于connection的恢复有一定的缺陷：
     
     连接的自动恢复是从发现连接出错之后的5秒才开始的，并且失败的话之后会每隔5秒重试一次。恢复过程中如果试图发送一条消息，这将会触发一个exception，应用层可能需要处理该异常以保证发送的消息不会丢失掉（也建议配合*publisher confirms*来做处理）
 
-### 可靠的消息送达（两个方向）
-#### publisher -> broker
+## 可靠的消息送达（两个方向）
+### publisher -> broker
 设置durability for exchanges, queues and persistent for messages；还可以设定消息的`mandatory`属性，这样当消息无法送达的时候broker会直接basic.return返回给publisher。
 > 还有一种情况是broker拒绝了该条消息（basic.nack），这表明broker因为某种原因当前不能处理该条消息，并拒绝为该条消息的发送负责。此时需要publisher自己来负责该条消息的后续处理，可能重发也可能就此作废等。
   
@@ -109,7 +120,7 @@ rabbitmq对于connection的恢复有一定的缺陷：
 
 设置rabbitmq的`AutomaticRecoveryEnabled`属性为true。
 
-#### broker -> consumer
+### broker -> consumer
 这个方向上可以使用 ***consumer ack*** 机制，有三个方法可供使用：
 - `basic.ack`
   rabbitmq收到ack之后会删除节点上的消息
@@ -127,7 +138,7 @@ QoS决定了信道上`in flight`的消息（unack）的条数。配合批量的a
 
 一个极端的例子就是自动ack模式，这个模式再配合一个没有限制的QoS当然是可以让整个消息系统投递效率非常高，但是你客户端受得了吗？我能想到的唯一场景只有一个日志记录，这种因为逻辑简单并且允许部分丢失所以也还好。
 
-#### when network fails
+### when network fails
 最后是当网络异常时的一些处理策略：
 + 网络异常的情况中connection执行recovery，此时delivery tags都会过期失效，rabbitmq客户端并不会发送带有过期tag的ack消息。这又会进一步导致rabbitmq broker重发所有没有收到ack确认的消息，因此consumer一定要能够处理重复达到的消息才行：
     > When manual acknowledgements are used, any delivery (message) that was not acked is automatically requeued when the channel (or connection) on which the delivery happened is closed. 
@@ -139,13 +150,12 @@ QoS决定了信道上`in flight`的消息（unack）的条数。配合批量的a
   
   为什么是可能？原因在于该条消息可能刚发送出去，还在传递过程中整个连接就断开了（broker重传，redelivered被置为true，但其实你根本还没见过该消息呢！）。所以很不幸，该属性为`true`的时候并不能说明客户端已经处理过该条消息；不过可以确信的是如果值为`false`，那么这条消息一定没有被处理过！
 
-### Roadmap
+## Roadmap
 - 几个核心操作类型的多线程支持
 - qos参数可配置（跟吞吐有关的还是交给开发者自己把控好了）
 - rabbitmq集群的支持
 
-### 参考链接
-
+## 参考链接
 - https://www.rabbitmq.com/dotnet-api-guide.html
 - https://www.rabbitmq.com/confirms.html
 - https://www.rabbitmq.com/channels.html

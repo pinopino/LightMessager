@@ -1,12 +1,15 @@
 ﻿using LightMessager.Common;
+using LightMessager.Exceptions;
 using LightMessager.Model;
-using LightMessager.Track;
 using Microsoft.Extensions.Configuration;
 using NLog;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace LightMessager
 {
@@ -21,21 +24,166 @@ namespace LightMessager
     */
     public sealed partial class RabbitMqHub
     {
-        private static ObjectPool<IPooledWapper> _channel_pools;
+        public class Advance
+        {
+            private RabbitMqHub _rabbitMqHub;
+            public Advance(RabbitMqHub rabbitMqHub)
+            {
+                _rabbitMqHub = rabbitMqHub;
+            }
 
-        private int _max_requeue;
-        private int _max_republish;
-        private int _min_delaysend;
-        private int _batch_size;
-        private ushort _prefetch_count;
-        private IConnection _connection;
-        private IConnection _asynConnection;
-        private ConcurrentDictionary<string, QueueInfo> _send_queue;
-        private ConcurrentDictionary<string, QueueInfo> _route_queue;
-        private ConcurrentDictionary<string, bool> _send_dlx;
-        private ConcurrentDictionary<string, bool> _route_dlx;
-        private object _lockobj = new object();
+            public void Send<TBody>(TBody messageBody, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers = null)
+            {
+                using (var pooled = _rabbitMqHub.GetChannel() as PooledChannel)
+                {
+                    var message = new Message<TBody>(messageBody);
+                    pooled.Publish(message, exchange, routeKey, mandatory, headers);
+                }
+            }
+
+            public async Task SendAsync<TBody>(TBody messageBody, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers = null)
+            {
+                using (var pooled = _rabbitMqHub.GetChannel() as PooledChannel)
+                {
+                    var message = new Message<TBody>(messageBody);
+                    await pooled.PublishAsync(message, exchange, routeKey, mandatory, headers);
+                }
+            }
+
+            public void Consume(string queue, Action<object, BasicDeliverEventArgs> action, bool requeue = false)
+            {
+                var channel = _rabbitMqHub.connection.CreateModel();
+                channel.BasicQos(0, _rabbitMqHub._prefetchCount, false);
+                var consumer = new EventingBasicConsumer(channel);
+                consumer.Received += (model, ea) =>
+                {
+                    var msgId = ea.BasicProperties.MessageId;
+                    try
+                    {
+                        var json = Encoding.UTF8.GetString(ea.Body);
+                        _rabbitMqHub.OnMessageReceived(msgId, json);
+                        action(model, ea);
+                        _rabbitMqHub.OnMessageConsumeOK(msgId);
+                        channel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (LightMessagerException ex)
+                    {
+                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
+                        channel.BasicNack(ea.DeliveryTag, false, requeue);
+                    }
+                    catch (Exception ex)
+                    {
+                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
+                    }
+                };
+                channel.BasicConsume(queue, false, consumer);
+            }
+
+            public void Consume(string queue, Func<object, BasicDeliverEventArgs, Task> func, bool requeue = false)
+            {
+                var channel = _rabbitMqHub.asynConnection.CreateModel();
+                channel.BasicQos(0, _rabbitMqHub._prefetchCount, false);
+                var consumer = new AsyncEventingBasicConsumer(channel);
+                consumer.Received += async (model, ea) =>
+                {
+                    var msgId = ea.BasicProperties.MessageId;
+                    try
+                    {
+                        var json = Encoding.UTF8.GetString(ea.Body);
+                        _rabbitMqHub.OnMessageReceived(msgId, json);
+                        await func(model, ea);
+                        _rabbitMqHub.OnMessageConsumeOK(msgId);
+                        channel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
+                        channel.BasicNack(ea.DeliveryTag, false, requeue);
+                    }
+                };
+                channel.BasicConsume(queue, false, consumer);
+            }
+
+            public void ExchangeDeclare(string exchange, string type, bool durable = true, IDictionary<string, object> arguments = null, IModel channel = null)
+            {
+                if (channel != null)
+                {
+                    channel.ExchangeDeclare(exchange, type, durable, autoDelete: false, arguments);
+                }
+                else
+                {
+                    using (var created = _rabbitMqHub.connection.CreateModel())
+                    {
+                        created.ExchangeDeclare(exchange, type, durable, autoDelete: false, arguments);
+                    }
+                }
+            }
+
+            public void QueueDeclare(string queue, bool durable = true, IDictionary<string, object> arguments = null, IModel channel = null)
+            {
+                if (channel != null)
+                {
+                    channel.QueueDeclare(queue, durable, exclusive: false, autoDelete: false, arguments);
+                }
+                else
+                {
+                    using (var created = _rabbitMqHub.connection.CreateModel())
+                    {
+                        created.QueueDeclare(queue, durable, exclusive: false, autoDelete: false, arguments);
+                    }
+                }
+            }
+
+            public void QueueBind(string queue, string exchange, string routeKey, IDictionary<string, object> arguments = null, IModel channel = null)
+            {
+                if (channel != null)
+                {
+                    channel.QueueBind(queue, exchange, routeKey, arguments);
+                }
+                else
+                {
+                    using (var created = _rabbitMqHub.connection.CreateModel())
+                    {
+                        created.QueueBind(queue, exchange, routeKey, arguments);
+                    }
+                }
+            }
+        }
+
         private Logger _logger = LogManager.GetLogger("RabbitMqHub");
+
+        private int _maxRequeue;
+        private int _maxRepublish;
+        private int _minDelaySend;
+        private int _batchSize;
+        private ushort _prefetchCount;
+        private ConcurrentDictionary<string, QueueInfo> _sendQueue;
+        private ConcurrentDictionary<string, QueueInfo> _routeQueue;
+        private ConcurrentDictionary<string, bool> _sendDlx;
+        private ConcurrentDictionary<string, bool> _routeDlx;
+        private object _lockObj = new object();
+
+        internal Lazy<ObjectPool<IPooledWapper>> channelPools;
+        internal ObjectPool<IPooledWapper> confirmedChannelPools;
+        internal bool publishConfirm;
+        internal TimeSpan? confirmTimeout;
+        internal IConnection connection;
+        internal IConnection asynConnection;
+
+        public Advance Advanced { private set; get; }
+        // TODO：async event
+        //
+        // links：
+        // https://stackoverflow.com/questions/19415646/should-i-avoid-async-void-event-handlers
+        // https://stackoverflow.com/questions/12451609/how-to-await-raising-an-eventhandler-event
+        // send
+        public event EventHandler<MessageSendEventArgs> MessageSending;
+        public event EventHandler<MessageSendEventArgs> MessageSendOK;
+        public event EventHandler<MessageSendEventArgs> MessageSendFailed;
+        // recv/consume
+        public event EventHandler<MessageConsumeEventArgs> MessageReceived;
+        public event EventHandler<MessageConsumeEventArgs> MessageConsumeOK;
+        public event EventHandler<MessageConsumeEventArgs> MessageConsumeFailed;
 
         public RabbitMqHub()
         {
@@ -46,8 +194,9 @@ namespace LightMessager
             var configuration = builder.Build();
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitChannelPool(configuration);
+            InitChannelPool();
             InitOther(configuration);
+            InitAdvance();
         }
 
         public RabbitMqHub(IConfigurationRoot configuration)
@@ -57,21 +206,125 @@ namespace LightMessager
 
             InitConnection(configuration);
             InitAsyncConnection(configuration);
-            InitChannelPool(configuration);
+            InitChannelPool();
             InitOther(configuration);
+            InitAdvance();
+        }
+
+        public RabbitMqHub SetPublishConfirm(TimeSpan timeout = default)
+        {
+            publishConfirm = true;
+            if (timeout != default)
+                confirmTimeout = timeout;
+
+            InitConfirmedChannelPool();
+
+            return this;
+        }
+
+        internal void OnMessageSending(ulong nextPublishSeqNo, in Message message)
+        {
+            // Make a temporary copy of the event to avoid possibility of
+            // a race condition if the last subscriber unsubscribes
+            // immediately after the null check and before the event is raised.
+            // 下同。
+            var raiseEvent = MessageSending;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                DeliveryTag = nextPublishSeqNo,
+                SendStatus = SendStatus.PendingResponse,
+                Message = message
+            });
+        }
+
+        internal void OnMessageSend(in Message message, SendStatus newStatus, string remark = "")
+        {
+            var raiseEvent = MessageSendFailed;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = newStatus,
+                Message = message,
+                Remark = remark
+            });
+        }
+
+        internal void OnChannelBasicAcks(object sender, BasicAckEventArgs e)
+        {
+            var raiseEvent = MessageSendOK;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = SendStatus.Confirmed,
+                DeliveryTag = e.DeliveryTag,
+                Multiple = e.Multiple
+            });
+        }
+
+        internal void OnChannelBasicNacks(object sender, BasicNackEventArgs e)
+        {
+            var raiseEvent = MessageSendFailed;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = SendStatus.Nacked,
+                DeliveryTag = e.DeliveryTag,
+                Multiple = e.Multiple
+            });
+        }
+
+        internal void OnChannelBasicReturn(object sender, BasicReturnEventArgs e)
+        {
+            var raiseEvent = MessageSendFailed;
+            raiseEvent?.Invoke(null, new MessageSendEventArgs
+            {
+                SendStatus = SendStatus.Unroutable,
+                ReplyCode = e.ReplyCode,
+                ReplyText = e.ReplyText,
+                Remark = $"try to push to exchange[{e.Exchange}] with routekey[{e.RoutingKey}]"
+            });
+        }
+
+        internal void OnMessageReceived(string msgId, string msgJson)
+        {
+            var raiseEvent = MessageReceived;
+            raiseEvent?.Invoke(null, new MessageConsumeEventArgs
+            {
+                ConsumeStatus = ConsumeStatus.Received,
+                MessageId = msgId,
+                MessageJson = msgJson
+            });
+        }
+
+        internal void OnMessageConsumeOK(string msgId)
+        {
+            var raiseEvent = MessageConsumeOK;
+            raiseEvent?.Invoke(null, new MessageConsumeEventArgs
+            {
+                ConsumeStatus = ConsumeStatus.Consumed,
+                MessageId = msgId
+            });
+        }
+
+        internal void OnMessageConsumeFailed(string msgId, string remark = "")
+        {
+            var raiseEvent = MessageConsumeFailed;
+            raiseEvent?.Invoke(null, new MessageConsumeEventArgs
+            {
+                ConsumeStatus = ConsumeStatus.Failed,
+                MessageId = msgId,
+                Remark = remark
+            });
         }
 
         private void InitConnection(IConfigurationRoot configuration)
         {
             var factory = GetConnectionFactory(configuration);
-            _connection = factory.CreateConnection();
+            connection = factory.CreateConnection();
         }
 
         private void InitAsyncConnection(IConfigurationRoot configuration)
         {
             var factory = GetConnectionFactory(configuration);
             factory.DispatchConsumersAsync = true;
-            _asynConnection = factory.CreateConnection();
+            asynConnection = factory.CreateConnection();
         }
 
         private ConnectionFactory GetConnectionFactory(IConfigurationRoot configuration)
@@ -88,34 +341,49 @@ namespace LightMessager
             return factory;
         }
 
-        private void InitChannelPool(IConfigurationRoot configuration)
+        private void InitChannelPool()
         {
-            // 说明：注意这里使用的是_connection，后面可以考虑producer的channel走
-            // 自己的connection（甚至connection也可以池化掉）
-            var cpu = Environment.ProcessorCount;
-            _channel_pools = new ObjectPool<IPooledWapper>(
-                p => new PooledChannel(_connection.CreateModel(), p, _connection),
-                cpu, cpu * 2);
+            var min = 4;
+            var cpu = Math.Max(Environment.ProcessorCount, min);
+            channelPools = new Lazy<ObjectPool<IPooledWapper>>(() => new ObjectPool<IPooledWapper>(p => new PooledChannel(this), min, cpu));
+        }
+
+        private void InitConfirmedChannelPool()
+        {
+            var min = 4;
+            var cpu = Math.Max(Environment.ProcessorCount, min);
+            confirmedChannelPools = new ObjectPool<IPooledWapper>(p => new PooledConfirmedChannel(this), min, cpu);
+        }
+
+        private void InitAdvance()
+        {
+            Advanced = new Advance(this);
         }
 
         private void InitOther(IConfigurationRoot configuration)
         {
-            _max_republish = 2;
-            _max_requeue = 2;
-            _min_delaysend = 5;
-            _batch_size = 300;
-            _prefetch_count = 200;
-            _send_queue = new ConcurrentDictionary<string, QueueInfo>();
-            _route_queue = new ConcurrentDictionary<string, QueueInfo>();
-            _send_dlx = new ConcurrentDictionary<string, bool>();
-            _route_dlx = new ConcurrentDictionary<string, bool>();
+            _maxRepublish = 2;
+            _maxRequeue = 2;
+            _minDelaySend = 5;
+            _batchSize = 300;
+            _prefetchCount = 200;
+            _sendQueue = new ConcurrentDictionary<string, QueueInfo>();
+            _routeQueue = new ConcurrentDictionary<string, QueueInfo>();
+            _sendDlx = new ConcurrentDictionary<string, bool>();
+            _routeDlx = new ConcurrentDictionary<string, bool>();
+        }
+
+        internal IPooledWapper GetChannel()
+        {
+            var pool = publishConfirm ? confirmedChannelPools : channelPools.Value;
+            return pool.Get();
         }
 
         // send方式的生产端
         internal void EnsureSendQueue(IModel channel, Type messageType, int delaySend, out QueueInfo info)
         {
             var key = GetTypeName(messageType);
-            if (!_send_queue.TryGetValue(key, out info))
+            if (!_sendQueue.TryGetValue(key, out info))
             {
                 info = GetSendQueueInfo(key);
                 channel.QueueDeclare(info.Queue, durable: true, exclusive: false, autoDelete: false);
@@ -126,9 +394,9 @@ namespace LightMessager
                 // links:
                 // https://www.rabbitmq.com/ttl.html
                 // https://www.rabbitmq.com/dlx.html
-                delaySend = Math.Max(delaySend, _min_delaysend); // 至少保证有个几秒的延时，不然意义不大
+                delaySend = Math.Max(delaySend, _minDelaySend); // 至少保证有个几秒的延时，不然意义不大
                 var dlx_key = $"{key}.delay_{delaySend}";
-                if (!_send_dlx.ContainsKey(dlx_key))
+                if (!_sendDlx.ContainsKey(dlx_key))
                 {
                     info.Delay_Exchange = string.Empty;
                     info.Delay_Queue = dlx_key;
@@ -144,7 +412,7 @@ namespace LightMessager
                         autoDelete: false,
                         arguments: args);
 
-                    _send_dlx.TryAdd(dlx_key, true);
+                    _sendDlx.TryAdd(dlx_key, true);
                 }
             }
         }
@@ -153,7 +421,7 @@ namespace LightMessager
         internal void EnsureSendQueue(IModel channel, Type messageType, out QueueInfo info)
         {
             var key = GetTypeName(messageType);
-            if (!_send_queue.TryGetValue(key, out info))
+            if (!_sendQueue.TryGetValue(key, out info))
             {
                 info = GetSendQueueInfo(key);
                 channel.QueueDeclare(info.Queue, durable: true, exclusive: false, autoDelete: false);
@@ -164,7 +432,7 @@ namespace LightMessager
         internal void EnsureRouteQueue(IModel channel, Type messageType, int delaySend, out QueueInfo info)
         {
             var key = GetTypeName(messageType);
-            if (!_route_queue.TryGetValue(key, out info))
+            if (!_routeQueue.TryGetValue(key, out info))
             {
                 info = GetRouteQueueInfo(key);
                 channel.ExchangeDeclare(info.Exchange, ExchangeType.Direct, durable: true);
@@ -172,9 +440,9 @@ namespace LightMessager
 
             if (delaySend > 0)
             {
-                delaySend = Math.Max(delaySend, _min_delaysend);
+                delaySend = Math.Max(delaySend, _minDelaySend);
                 var dlx_key = $"{key}.delay_{delaySend}";
-                if (!_route_dlx.ContainsKey(dlx_key))
+                if (!_routeDlx.ContainsKey(dlx_key))
                 {
                     info.Delay_Exchange = $"{key}.ex.delay_{delaySend}";
                     info.Delay_Queue = dlx_key;
@@ -191,7 +459,7 @@ namespace LightMessager
                         arguments: args);
                     channel.QueueBind(info.Delay_Queue, info.Delay_Exchange, string.Empty);
 
-                    _route_dlx.TryAdd(key, true);
+                    _routeDlx.TryAdd(key, true);
                 }
             }
         }
@@ -201,7 +469,7 @@ namespace LightMessager
         {
             var type_name = GetTypeName(messageType);
             var key = $"{type_name}.sub.{subscriber}";
-            if (!_route_queue.TryGetValue(key, out info))
+            if (!_routeQueue.TryGetValue(key, out info))
             {
                 info = GetRouteQueueInfo(key, type_name);
                 info.Queue = key;
@@ -216,7 +484,7 @@ namespace LightMessager
         internal void EnsureTopicQueue(IModel channel, Type messageType, int delaySend, out QueueInfo info)
         {
             var key = GetTypeName(messageType);
-            if (!_route_queue.TryGetValue(key, out info))
+            if (!_routeQueue.TryGetValue(key, out info))
             {
                 info = GetTopicQueueInfo(key);
                 channel.ExchangeDeclare(info.Exchange, ExchangeType.Topic, durable: true);
@@ -224,9 +492,9 @@ namespace LightMessager
 
             if (delaySend > 0)
             {
-                delaySend = Math.Max(delaySend, _min_delaysend);
+                delaySend = Math.Max(delaySend, _minDelaySend);
                 var dlx_key = $"{key}.delay_{delaySend}";
-                if (!_route_dlx.ContainsKey(dlx_key))
+                if (!_routeDlx.ContainsKey(dlx_key))
                 {
                     info.Delay_Exchange = $"{key}.ex.delay_{delaySend}";
                     info.Delay_Queue = dlx_key;
@@ -243,7 +511,7 @@ namespace LightMessager
                         arguments: args);
                     channel.QueueBind(info.Delay_Queue, info.Delay_Exchange, string.Empty);
 
-                    _route_dlx.TryAdd(key, true);
+                    _routeDlx.TryAdd(key, true);
                 }
             }
         }
@@ -253,7 +521,7 @@ namespace LightMessager
         {
             var type_name = GetTypeName(messageType);
             var key = $"{type_name}.sub.{subscriber}";
-            if (!_route_queue.TryGetValue(key, out info))
+            if (!_routeQueue.TryGetValue(key, out info))
             {
                 info = GetTopicQueueInfo(key, type_name);
                 info.Queue = key;
@@ -268,7 +536,7 @@ namespace LightMessager
         internal void EnsurePublishQueue(IModel channel, Type messageType, int delaySend, out QueueInfo info)
         {
             var key = GetTypeName(messageType);
-            if (!_route_queue.TryGetValue(key, out info))
+            if (!_routeQueue.TryGetValue(key, out info))
             {
                 info = GetPublishQueueInfo(key);
                 channel.ExchangeDeclare(info.Exchange, ExchangeType.Fanout, durable: true);
@@ -276,9 +544,9 @@ namespace LightMessager
 
             if (delaySend > 0)
             {
-                delaySend = Math.Max(delaySend, _min_delaysend);
+                delaySend = Math.Max(delaySend, _minDelaySend);
                 var dlx_key = $"{key}.delay_{delaySend}";
-                if (!_route_dlx.ContainsKey(dlx_key))
+                if (!_routeDlx.ContainsKey(dlx_key))
                 {
                     info.Delay_Exchange = $"{key}.ex.delay_{delaySend}";
                     info.Delay_Queue = dlx_key;
@@ -295,7 +563,7 @@ namespace LightMessager
                         arguments: args);
                     channel.QueueBind(info.Delay_Queue, info.Delay_Exchange, string.Empty);
 
-                    _route_dlx.TryAdd(key, true);
+                    _routeDlx.TryAdd(key, true);
                 }
             }
         }
@@ -305,7 +573,7 @@ namespace LightMessager
         {
             var type_name = GetTypeName(messageType);
             var key = $"{type_name}.sub.{subscriber}";
-            if (!_route_queue.TryGetValue(key, out info))
+            if (!_routeQueue.TryGetValue(key, out info))
             {
                 info = GetPublishQueueInfo(key, type_name);
                 info.Queue = key;
@@ -317,7 +585,7 @@ namespace LightMessager
 
         internal QueueInfo GetSendQueueInfo(string key)
         {
-            var info = _send_queue.GetOrAdd(key, t => new QueueInfo
+            var info = _sendQueue.GetOrAdd(key, t => new QueueInfo
             {
                 Exchange = string.Empty,
                 Queue = key
@@ -328,7 +596,7 @@ namespace LightMessager
 
         internal QueueInfo GetRouteQueueInfo(string key, string typeName = null)
         {
-            var info = _route_queue.GetOrAdd(key, t => new QueueInfo
+            var info = _routeQueue.GetOrAdd(key, t => new QueueInfo
             {
                 Exchange = (typeName ?? key) + ".ex.direct",
                 Queue = string.Empty
@@ -339,7 +607,7 @@ namespace LightMessager
 
         internal QueueInfo GetTopicQueueInfo(string key, string typeName = null)
         {
-            var info = _route_queue.GetOrAdd(key, t => new QueueInfo
+            var info = _routeQueue.GetOrAdd(key, t => new QueueInfo
             {
                 Exchange = (typeName ?? key) + ".ex.topic",
                 Queue = string.Empty
@@ -350,7 +618,7 @@ namespace LightMessager
 
         internal QueueInfo GetPublishQueueInfo(string key, string typeName = null)
         {
-            var info = _route_queue.GetOrAdd(key, t => new QueueInfo
+            var info = _routeQueue.GetOrAdd(key, t => new QueueInfo
             {
                 Exchange = (typeName ?? key) + ".ex.fanout",
                 Queue = string.Empty
