@@ -69,7 +69,7 @@ namespace LightMessager.Model
             }
         }
 
-        public void Check(ulong deliveryTag)
+        public void Check(ulong deliveryTag, bool setCancel = false)
         {
             Node pre = null;
             Node current = head;
@@ -77,7 +77,11 @@ namespace LightMessager.Model
             {
                 if (deliveryTag == current.DeliveryTag)
                 {
-                    current.Tcs.SetResult(true);
+                    if (setCancel)
+                        current.Tcs.TrySetCanceled();
+                    else
+                        current.Tcs.SetResult(true);
+
                     if (pre == null)
                     {
                         head = null;

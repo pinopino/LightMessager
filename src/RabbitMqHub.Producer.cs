@@ -18,7 +18,7 @@ namespace LightMessager
         /// <returns>true发送成功，反之失败</returns>
         public bool Send<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 var message = new Message<TBody>(messageBody);
                 if (string.IsNullOrEmpty(routeKey))
@@ -53,7 +53,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info;
                 if (string.IsNullOrEmpty(routeKey))
@@ -103,7 +103,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info;
                 var counter = 0;
@@ -134,7 +134,7 @@ namespace LightMessager
 
         public async Task<bool> SendAsync<TBody>(TBody messageBody, string routeKey = "", int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 var sequence = 0ul;
                 var message = new Message<TBody>();
@@ -161,7 +161,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info = null;
                 if (string.IsNullOrEmpty(routeKey))
@@ -201,7 +201,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 QueueInfo info = null;
                 var counter = 0;
@@ -233,7 +233,7 @@ namespace LightMessager
 
         public bool Publish<TBody>(TBody messageBody, int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
                 var message = new Message<TBody>(messageBody);
@@ -247,7 +247,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
 
@@ -266,7 +266,7 @@ namespace LightMessager
 
         public async Task<bool> PublishAsync<TBody>(TBody messageBody, int delaySend = 0)
         {
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 var sequence = 0ul;
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
@@ -281,7 +281,7 @@ namespace LightMessager
             if (!messageBodys.Any())
                 return false;
 
-            using (var pooled = GetChannel() as PooledConfirmedChannel)
+            using (var pooled = GetConfirmedChannel() as PooledConfirmedChannel)
             {
                 EnsurePublishQueue(pooled.Channel, typeof(TBody), delaySend, out QueueInfo info);
 

@@ -64,16 +64,16 @@ namespace LightMessager
             catch (OperationInterruptedException ex)
             {
                 if (ex.ShutdownReason.ReplyCode == 404)
-                    _rabbitMqHub.OnMessageSend(message, SendStatus.NoExchangeFound, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSendFailed(message, SendStatus.NoExchangeFound, remark: ex.Message);
                 else
-                    _rabbitMqHub.OnMessageSend(message, SendStatus.Failed, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSendFailed(message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;
             }
             catch (Exception ex)
             {
-                _rabbitMqHub.OnMessageSend(message, SendStatus.Failed, remark: ex.Message);
+                _rabbitMqHub.OnMessageSendFailed(message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;

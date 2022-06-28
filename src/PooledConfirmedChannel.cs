@@ -6,6 +6,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,11 +19,10 @@ namespace LightMessager
 
         private volatile int _reseting;
         private readonly int _spinCount;
-        private TimeSpan? _confirmTimeout;
+        private TimeSpan _confirmTimeout;
         private IConnection _connection;
         private IModel _innerChannel;
-        private Lazy<ObjectPool<IPooledWapper>> _pool;
-        private ObjectPool<IPooledWapper> _confirmedPool;
+        private Lazy<ObjectPool<IPooledWapper>> _confirmedPool;
         private CheckpointList _awaitingCheckpoints;
         private RabbitMqHub _rabbitMqHub;
 
@@ -34,7 +34,6 @@ namespace LightMessager
             _rabbitMqHub = rabbitMqHub;
             _confirmTimeout = rabbitMqHub.confirmTimeout;
             _connection = rabbitMqHub.connection;
-            _pool = rabbitMqHub.channelPools;
             _confirmedPool = rabbitMqHub.confirmedChannelPools;
             _awaitingCheckpoints = new CheckpointList();
             InitChannel();
@@ -50,7 +49,7 @@ namespace LightMessager
             _innerChannel.ModelShutdown += Channel_ModelShutdown;
         }
 
-        internal void Publish<TBody>(Message<TBody> message, string exchange, string routeKey)
+        internal void Publish<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory = true, IDictionary<string, object> headers = null)
         {
             /*
              * 说明：
@@ -61,20 +60,20 @@ namespace LightMessager
              * 
              */
             _rabbitMqHub.OnMessageSending(_innerChannel.NextPublishSeqNo, message);
-            InnerPublish(message, exchange, routeKey);
+            InnerPublish(message, exchange, routeKey, mandatory, headers);
         }
 
-        internal async Task<ulong> PublishReturnSeqAsync<TBody>(Message<TBody> message, string exchange, string routeKey)
+        internal async Task<ulong> PublishReturnSeqAsync<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory = true, IDictionary<string, object> headers = null)
         {
             var sequence = _innerChannel.NextPublishSeqNo;
             _rabbitMqHub.OnMessageSending(sequence, message);
 
-            await Task.Factory.StartNew(() => InnerPublish(message, exchange, routeKey));
+            await Task.Factory.StartNew(() => InnerPublish(message, exchange, routeKey, mandatory, headers));
 
             return sequence;
         }
 
-        private void InnerPublish<TBody>(Message<TBody> message, string exchange, string routeKey)
+        private void InnerPublish<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers)
         {
             var json = JsonConvert.SerializeObject(message);
             var bytes = Encoding.UTF8.GetBytes(json);
@@ -82,23 +81,24 @@ namespace LightMessager
             props.MessageId = message.MsgId;
             props.ContentType = "text/plain";
             props.DeliveryMode = 2;
+            props.Headers = headers;
             try
             {
-                _innerChannel.BasicPublish(exchange, routeKey, mandatory: true, props, bytes);
+                _innerChannel.BasicPublish(exchange, routeKey, mandatory, props, bytes);
             }
             catch (OperationInterruptedException ex)
             {
                 if (ex.ShutdownReason.ReplyCode == 404)
-                    _rabbitMqHub.OnMessageSend(message, SendStatus.NoExchangeFound, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSendFailed(message, SendStatus.NoExchangeFound, remark: ex.Message);
                 else
-                    _rabbitMqHub.OnMessageSend(message, SendStatus.Failed, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSendFailed(message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;
             }
             catch (Exception ex)
             {
-                _rabbitMqHub.OnMessageSend(message, SendStatus.Failed, remark: ex.Message);
+                _rabbitMqHub.OnMessageSendFailed(message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;
@@ -107,8 +107,7 @@ namespace LightMessager
 
         internal bool WaitForConfirms()
         {
-            var timeout = _confirmTimeout.HasValue ? _confirmTimeout.Value : TimeSpan.FromSeconds(10);
-            return _innerChannel.WaitForConfirms(timeout);
+            return _innerChannel.WaitForConfirms(_confirmTimeout);
         }
 
         internal Task<bool> WaitForConfirmsAsync(ulong deliveryTag)
@@ -121,6 +120,11 @@ namespace LightMessager
                 Thread.SpinWait(_spinCount);
 
             var tcs = new TaskCompletionSource<bool>();
+            var ct = new CancellationTokenSource(_confirmTimeout);
+            ct.Token.Register(() =>
+            {
+                _awaitingCheckpoints.Check(deliveryTag, setCancel: true);
+            });
             _awaitingCheckpoints.AddNode(deliveryTag, tcs);
             return tcs.Task;
         }
@@ -154,6 +158,7 @@ namespace LightMessager
         // 所以log一下但并不会重试，消息的状态也直接置为终结态Error_Unroutable
         private void Channel_BasicReturn(object sender, BasicReturnEventArgs e)
         {
+            // 注意，BasicReturn之后会接一个BasicAck
             _rabbitMqHub.OnChannelBasicReturn(sender, e);
         }
 
@@ -197,7 +202,7 @@ namespace LightMessager
             if (disposing)
             {
                 // 清理托管资源
-                if (_confirmedPool.IsDisposed)
+                if (_confirmedPool.Value.IsDisposed)
                 {
                     _innerChannel.Close();
                     _innerChannel.Dispose();
@@ -211,11 +216,11 @@ namespace LightMessager
                     {
                         ClearCheckpoint();
                         InitChannel();
-                        _confirmedPool.Put(this);
+                        _confirmedPool.Value.Put(this);
                     }
                     else
                     {
-                        _confirmedPool.Put(this);
+                        _confirmedPool.Value.Put(this);
                     }
                 }
             }

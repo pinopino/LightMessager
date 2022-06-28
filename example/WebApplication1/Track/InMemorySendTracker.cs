@@ -3,12 +3,12 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace LightMessager.Track
+namespace WebApplication1.Track
 {
     /// <summary>
     /// for debug only
     /// </summary>
-    internal sealed class InMemorySendTracker
+    public sealed class InMemorySendTracker
     {
         private readonly int _spinCount;
         private volatile int _reseting;
@@ -28,7 +28,6 @@ namespace LightMessager.Track
                 Thread.SpinWait(_spinCount);
 
             _unconfirm.TryAdd(deliveryTag, message);
-            message.DeliveryTag = deliveryTag;
 
             return Task.CompletedTask;
         }

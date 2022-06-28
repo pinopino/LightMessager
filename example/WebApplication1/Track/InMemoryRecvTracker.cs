@@ -2,12 +2,12 @@
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
-namespace LightMessager.Track
+namespace WebApplication1.Track
 {
     /// <summary>
     /// for debug only
     /// </summary>
-    internal sealed class InMemoryRecvTracker
+    public sealed class InMemoryRecvTracker
     {
         private ConcurrentDictionary<string, Message> _msgList; // <MsgId, Msg>
         private ConcurrentQueue<Message> _errorMsgs;

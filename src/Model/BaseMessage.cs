@@ -19,8 +19,6 @@ namespace LightMessager.Model
 
         public virtual string MsgId => _id.Value;
 
-        internal ulong DeliveryTag { set; get; }
-
         // 说明：消息的每次处理我们都需要判断是否需要重新入队列，
         // 因此它不应该随着消息的序列化而序列化
         [JsonIgnore]

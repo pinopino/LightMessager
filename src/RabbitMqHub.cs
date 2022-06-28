@@ -1,5 +1,4 @@
 ﻿using LightMessager.Common;
-using LightMessager.Exceptions;
 using LightMessager.Model;
 using Microsoft.Extensions.Configuration;
 using NLog;
@@ -8,8 +7,6 @@ using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace LightMessager
 {
@@ -24,132 +21,6 @@ namespace LightMessager
     */
     public sealed partial class RabbitMqHub
     {
-        public class Advance
-        {
-            private RabbitMqHub _rabbitMqHub;
-            public Advance(RabbitMqHub rabbitMqHub)
-            {
-                _rabbitMqHub = rabbitMqHub;
-            }
-
-            public void Send<TBody>(TBody messageBody, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers = null)
-            {
-                using (var pooled = _rabbitMqHub.GetChannel() as PooledChannel)
-                {
-                    var message = new Message<TBody>(messageBody);
-                    pooled.Publish(message, exchange, routeKey, mandatory, headers);
-                }
-            }
-
-            public async Task SendAsync<TBody>(TBody messageBody, string exchange, string routeKey, bool mandatory, IDictionary<string, object> headers = null)
-            {
-                using (var pooled = _rabbitMqHub.GetChannel() as PooledChannel)
-                {
-                    var message = new Message<TBody>(messageBody);
-                    await pooled.PublishAsync(message, exchange, routeKey, mandatory, headers);
-                }
-            }
-
-            public void Consume(string queue, Action<object, BasicDeliverEventArgs> action, bool requeue = false)
-            {
-                var channel = _rabbitMqHub.connection.CreateModel();
-                channel.BasicQos(0, _rabbitMqHub._prefetchCount, false);
-                var consumer = new EventingBasicConsumer(channel);
-                consumer.Received += (model, ea) =>
-                {
-                    var msgId = ea.BasicProperties.MessageId;
-                    try
-                    {
-                        var json = Encoding.UTF8.GetString(ea.Body);
-                        _rabbitMqHub.OnMessageReceived(msgId, json);
-                        action(model, ea);
-                        _rabbitMqHub.OnMessageConsumeOK(msgId);
-                        channel.BasicAck(ea.DeliveryTag, false);
-                    }
-                    catch (LightMessagerException ex)
-                    {
-                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
-                        channel.BasicNack(ea.DeliveryTag, false, requeue);
-                    }
-                    catch (Exception ex)
-                    {
-                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
-                    }
-                };
-                channel.BasicConsume(queue, false, consumer);
-            }
-
-            public void Consume(string queue, Func<object, BasicDeliverEventArgs, Task> func, bool requeue = false)
-            {
-                var channel = _rabbitMqHub.asynConnection.CreateModel();
-                channel.BasicQos(0, _rabbitMqHub._prefetchCount, false);
-                var consumer = new AsyncEventingBasicConsumer(channel);
-                consumer.Received += async (model, ea) =>
-                {
-                    var msgId = ea.BasicProperties.MessageId;
-                    try
-                    {
-                        var json = Encoding.UTF8.GetString(ea.Body);
-                        _rabbitMqHub.OnMessageReceived(msgId, json);
-                        await func(model, ea);
-                        _rabbitMqHub.OnMessageConsumeOK(msgId);
-                        channel.BasicAck(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _rabbitMqHub.OnMessageConsumeFailed(msgId, ex.Message);
-                        channel.BasicNack(ea.DeliveryTag, false, requeue);
-                    }
-                };
-                channel.BasicConsume(queue, false, consumer);
-            }
-
-            public void ExchangeDeclare(string exchange, string type, bool durable = true, IDictionary<string, object> arguments = null, IModel channel = null)
-            {
-                if (channel != null)
-                {
-                    channel.ExchangeDeclare(exchange, type, durable, autoDelete: false, arguments);
-                }
-                else
-                {
-                    using (var created = _rabbitMqHub.connection.CreateModel())
-                    {
-                        created.ExchangeDeclare(exchange, type, durable, autoDelete: false, arguments);
-                    }
-                }
-            }
-
-            public void QueueDeclare(string queue, bool durable = true, IDictionary<string, object> arguments = null, IModel channel = null)
-            {
-                if (channel != null)
-                {
-                    channel.QueueDeclare(queue, durable, exclusive: false, autoDelete: false, arguments);
-                }
-                else
-                {
-                    using (var created = _rabbitMqHub.connection.CreateModel())
-                    {
-                        created.QueueDeclare(queue, durable, exclusive: false, autoDelete: false, arguments);
-                    }
-                }
-            }
-
-            public void QueueBind(string queue, string exchange, string routeKey, IDictionary<string, object> arguments = null, IModel channel = null)
-            {
-                if (channel != null)
-                {
-                    channel.QueueBind(queue, exchange, routeKey, arguments);
-                }
-                else
-                {
-                    using (var created = _rabbitMqHub.connection.CreateModel())
-                    {
-                        created.QueueBind(queue, exchange, routeKey, arguments);
-                    }
-                }
-            }
-        }
-
         private Logger _logger = LogManager.GetLogger("RabbitMqHub");
 
         private int _maxRequeue;
@@ -164,9 +35,8 @@ namespace LightMessager
         private object _lockObj = new object();
 
         internal Lazy<ObjectPool<IPooledWapper>> channelPools;
-        internal ObjectPool<IPooledWapper> confirmedChannelPools;
-        internal bool publishConfirm;
-        internal TimeSpan? confirmTimeout;
+        internal Lazy<ObjectPool<IPooledWapper>> confirmedChannelPools;
+        internal TimeSpan confirmTimeout;
         internal IConnection connection;
         internal IConnection asynConnection;
 
@@ -195,6 +65,7 @@ namespace LightMessager
             InitConnection(configuration);
             InitAsyncConnection(configuration);
             InitChannelPool();
+            InitConfirmedChannelPool();
             InitOther(configuration);
             InitAdvance();
         }
@@ -207,19 +78,9 @@ namespace LightMessager
             InitConnection(configuration);
             InitAsyncConnection(configuration);
             InitChannelPool();
+            InitConfirmedChannelPool();
             InitOther(configuration);
             InitAdvance();
-        }
-
-        public RabbitMqHub SetPublishConfirm(TimeSpan timeout = default)
-        {
-            publishConfirm = true;
-            if (timeout != default)
-                confirmTimeout = timeout;
-
-            InitConfirmedChannelPool();
-
-            return this;
         }
 
         internal void OnMessageSending(ulong nextPublishSeqNo, in Message message)
@@ -237,7 +98,7 @@ namespace LightMessager
             });
         }
 
-        internal void OnMessageSend(in Message message, SendStatus newStatus, string remark = "")
+        internal void OnMessageSendFailed(in Message message, SendStatus newStatus, string remark = "")
         {
             var raiseEvent = MessageSendFailed;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
@@ -352,7 +213,7 @@ namespace LightMessager
         {
             var min = 4;
             var cpu = Math.Max(Environment.ProcessorCount, min);
-            confirmedChannelPools = new ObjectPool<IPooledWapper>(p => new PooledConfirmedChannel(this), min, cpu);
+            confirmedChannelPools = new Lazy<ObjectPool<IPooledWapper>>(() => new ObjectPool<IPooledWapper>(p => new PooledConfirmedChannel(this), min, cpu));
         }
 
         private void InitAdvance()
@@ -367,6 +228,7 @@ namespace LightMessager
             _minDelaySend = 5;
             _batchSize = 300;
             _prefetchCount = 200;
+            confirmTimeout = TimeSpan.FromSeconds(10); // 单位秒
             _sendQueue = new ConcurrentDictionary<string, QueueInfo>();
             _routeQueue = new ConcurrentDictionary<string, QueueInfo>();
             _sendDlx = new ConcurrentDictionary<string, bool>();
@@ -375,7 +237,13 @@ namespace LightMessager
 
         internal IPooledWapper GetChannel()
         {
-            var pool = publishConfirm ? confirmedChannelPools : channelPools.Value;
+            var pool = channelPools.Value;
+            return pool.Get();
+        }
+
+        internal IPooledWapper GetConfirmedChannel()
+        {
+            var pool = confirmedChannelPools.Value;
             return pool.Get();
         }
 
