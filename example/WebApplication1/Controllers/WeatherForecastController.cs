@@ -57,20 +57,5 @@ namespace WebApplication1.Controllers
 
             return Ok("ok");
         }
-
-        private void rabbitMqHub_MessageSending(object? sender, LightMessager.Model.MessageSendEventArgs e)
-        {
-
-        }
-
-        private void rabbitMqHub_MessageSendOK(object? sender, LightMessager.Model.MessageSendEventArgs e)
-        {
-            
-        }
-
-        private void rabbitMqHub_MessageSendFailed(object? sender, LightMessager.Model.MessageSendEventArgs e)
-        {
-            
-        }
     }
 }
