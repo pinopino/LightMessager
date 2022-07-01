@@ -83,7 +83,7 @@ namespace LightMessager
             InitAdvance();
         }
 
-        internal void OnMessageSending(ulong nextPublishSeqNo, in Message message)
+        internal void OnMessageSending(int channelNumber, ulong nextPublishSeqNo, in Message message)
         {
             // Make a temporary copy of the event to avoid possibility of
             // a race condition if the last subscriber unsubscribes
@@ -92,17 +92,19 @@ namespace LightMessager
             var raiseEvent = MessageSending;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
             {
+                ChannelNumber = channelNumber,
                 DeliveryTag = nextPublishSeqNo,
                 SendStatus = SendStatus.PendingResponse,
                 Message = message
             });
         }
 
-        internal void OnMessageSendFailed(in Message message, SendStatus newStatus, string remark = "")
+        internal void OnMessageSendFailed(int channelNumber, in Message message, SendStatus newStatus, string remark = "")
         {
             var raiseEvent = MessageSendFailed;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
             {
+                ChannelNumber = channelNumber,
                 SendStatus = newStatus,
                 Message = message,
                 Remark = remark
@@ -114,6 +116,7 @@ namespace LightMessager
             var raiseEvent = MessageSendOK;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
             {
+                ChannelNumber = ((IModel)sender).ChannelNumber,
                 SendStatus = SendStatus.Confirmed,
                 DeliveryTag = e.DeliveryTag,
                 Multiple = e.Multiple
@@ -125,6 +128,7 @@ namespace LightMessager
             var raiseEvent = MessageSendFailed;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
             {
+                ChannelNumber = ((IModel)sender).ChannelNumber,
                 SendStatus = SendStatus.Nacked,
                 DeliveryTag = e.DeliveryTag,
                 Multiple = e.Multiple
@@ -136,6 +140,7 @@ namespace LightMessager
             var raiseEvent = MessageSendFailed;
             raiseEvent?.Invoke(null, new MessageSendEventArgs
             {
+                ChannelNumber = ((IModel)sender).ChannelNumber,
                 SendStatus = SendStatus.Unroutable,
                 ReplyCode = e.ReplyCode,
                 ReplyText = e.ReplyText,

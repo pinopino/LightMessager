@@ -59,14 +59,14 @@ namespace LightMessager
              * .When a negative ack arrives, remove the entry and schedule its message for republishing (or something else that's suitable)
              * 
              */
-            _rabbitMqHub.OnMessageSending(_innerChannel.NextPublishSeqNo, message);
+            _rabbitMqHub.OnMessageSending(_innerChannel.ChannelNumber, _innerChannel.NextPublishSeqNo, message);
             InnerPublish(message, exchange, routeKey, mandatory, headers);
         }
 
         internal async Task<ulong> PublishReturnSeqAsync<TBody>(Message<TBody> message, string exchange, string routeKey, bool mandatory = true, IDictionary<string, object> headers = null)
         {
             var sequence = _innerChannel.NextPublishSeqNo;
-            _rabbitMqHub.OnMessageSending(sequence, message);
+            _rabbitMqHub.OnMessageSending(_innerChannel.ChannelNumber, sequence, message);
 
             await Task.Factory.StartNew(() => InnerPublish(message, exchange, routeKey, mandatory, headers));
 
@@ -89,16 +89,16 @@ namespace LightMessager
             catch (OperationInterruptedException ex)
             {
                 if (ex.ShutdownReason.ReplyCode == 404)
-                    _rabbitMqHub.OnMessageSendFailed(message, SendStatus.NoExchangeFound, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSendFailed(_innerChannel.ChannelNumber, message, SendStatus.NoExchangeFound, remark: ex.Message);
                 else
-                    _rabbitMqHub.OnMessageSendFailed(message, SendStatus.Failed, remark: ex.Message);
+                    _rabbitMqHub.OnMessageSendFailed(_innerChannel.ChannelNumber, message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;
             }
             catch (Exception ex)
             {
-                _rabbitMqHub.OnMessageSendFailed(message, SendStatus.Failed, remark: ex.Message);
+                _rabbitMqHub.OnMessageSendFailed(_innerChannel.ChannelNumber, message, SendStatus.Failed, remark: ex.Message);
 
                 if (_innerChannel.IsClosed)
                     throw;
