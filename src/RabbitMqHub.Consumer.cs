@@ -111,7 +111,7 @@ namespace LightMessager
             consumer.Received += (model, ea) =>
             {
                 var msgId = ea.BasicProperties.MessageId;
-                var json = Encoding.UTF8.GetString(ea.Body);
+                var json = Encoding.UTF8.GetString(ea.Body.Span);
                 OnMessageReceived(msgId, json);
 
                 var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);
@@ -134,7 +134,7 @@ namespace LightMessager
             consumer.Received += async (model, ea) =>
             {
                 var msgId = ea.BasicProperties.MessageId;
-                var json = Encoding.UTF8.GetString(ea.Body);
+                var json = Encoding.UTF8.GetString(ea.Body.Span);
                 OnMessageReceived(msgId, json);
 
                 var msg = JsonConvert.DeserializeObject<Message<TBody>>(json);

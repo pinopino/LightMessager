@@ -134,7 +134,7 @@ namespace LightMessager
                     var msgId = ea.BasicProperties.MessageId;
                     try
                     {
-                        var json = Encoding.UTF8.GetString(ea.Body);
+                        var json = Encoding.UTF8.GetString(ea.Body.Span);
                         _rabbitMqHub.OnMessageReceived(msgId, json);
                         action(model, ea);
                         _rabbitMqHub.OnMessageConsumeOK(msgId);
@@ -163,7 +163,7 @@ namespace LightMessager
                     var msgId = ea.BasicProperties.MessageId;
                     try
                     {
-                        var json = Encoding.UTF8.GetString(ea.Body);
+                        var json = Encoding.UTF8.GetString(ea.Body.Span);
                         _rabbitMqHub.OnMessageReceived(msgId, json);
                         await func(model, ea);
                         _rabbitMqHub.OnMessageConsumeOK(msgId);
