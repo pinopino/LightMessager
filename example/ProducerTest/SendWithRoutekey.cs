@@ -1,5 +1,4 @@
 ﻿using LightMessager;
-using System;
 
 namespace ProducerTest
 {
@@ -11,6 +10,9 @@ namespace ProducerTest
             _mqHub = mqHub;
         }
 
+        // 发送带有routkey的消息
+        // 库在此种模式下会根据routkey的特性自动选择为你创建一个exchange（type为direct、route、fanout都有可能）
+        // 不会创建queue，你需要自己手动调用Consume、RegisterHandler等消费端方法来进行消费
         public void Run1()
         {
             for (var i = 0; i < 5; i++)
@@ -78,22 +80,6 @@ namespace ProducerTest
                 Quantity = 30
             };
             _mqHub.Send(order3, "food.snack");
-        }
-
-        public void Run3(int delay)
-        {
-            for (var i = 0; i < 3; i++)
-            {
-                var order2 = new Order
-                {
-                    OrderId = $"水果订单{i}",
-                    Price = 200M,
-                    ProductCode = "Fruit",
-                    Quantity = 20
-                };
-                Console.WriteLine("发送一条消息，时间：" + DateTime.Now);
-                _mqHub.Send(order2, "fruit", delay);
-            }
         }
     }
 }

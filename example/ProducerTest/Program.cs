@@ -1,6 +1,5 @@
 ﻿using LightMessager;
 using System;
-using System.Collections.Generic;
 
 namespace ProducerTest
 {
@@ -13,16 +12,16 @@ namespace ProducerTest
             #region baisc
             // 场景1：
             // 直发单条消息
-            var direct = new DirectSend(mq);
-            //direct.Run1();
+            var simple = new SimpleSend(mq);
+            simple.Run1();
 
             // 场景2：
             // 直发多条消息（同时打开多个消费者），每个消费者消费不同的消息
-            direct.Run2();
+            //simple.Run2();
 
             // 场景3：
             // 延迟发送，延迟时间尽量不要太小了以免遇到未知边界情况
-            //direct.Run3(10);
+            //simple.Run3(10);
 
             // 场景4：
             // 多条消息借由routekey分发到不同的消费端（消费端需要自己注册感兴趣的routekey）
@@ -43,10 +42,6 @@ namespace ProducerTest
             // 多条消息fanout方式的发送，所有消费者消费相同的消息
             //var fanout = new Fanout(mq);
             //fanout.Run();
-            #endregion
-
-            #region advance
-
             #endregion
 
             Console.Read();

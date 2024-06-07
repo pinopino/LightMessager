@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace ProducerTest
+﻿namespace LightMessager.Test
 {
     public class Order
     {
@@ -8,6 +6,7 @@ namespace ProducerTest
         public decimal Price { set; get; }
         public string ProductCode { set; get; }
         public int Quantity { set; get; }
+
         public DateTime CreatedTime { set; get; }
 
         public override string ToString()

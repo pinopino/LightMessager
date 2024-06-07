@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace ProducerTest
+namespace WebApplication1
 {
     public class Order
     {

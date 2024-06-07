@@ -1,9 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,8 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\LightMessager.Tracker\LightMessager.Tracker.csproj" />
-    <ProjectReference Include="..\..\src\LightMessager\LightMessager.csproj" />
+    <ProjectReference Include="..\LightMessager\LightMessager.csproj" />
   </ItemGroup>
 
 </Project>

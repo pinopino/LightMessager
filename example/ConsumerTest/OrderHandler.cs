@@ -8,7 +8,7 @@ namespace ConsumerTest
     /// </summary>
     public class OrderHandler : BaseMessageHandler<Order>
     {
-        protected override bool DoHandle(Message<Order> message)
+        public override bool Handle(Order message, bool redelivered)
         {
             // 不需要做任何try...catch处理，库内部已经处理过了
             Console.WriteLine("接收到消息: " + message + "，时间：" + DateTime.Now);
@@ -21,7 +21,7 @@ namespace ConsumerTest
     /// </summary>
     public class OrderHandler1 : BaseMessageHandler<Order>
     {
-        protected override bool DoHandle(Message<Order> message)
+        public override bool Handle(Order message, bool redelivered)
         {
             // 不需要做任何try...catch处理，库内部已经处理过了
             Console.WriteLine("我是sub1, 接收到消息: " + message + "，时间：" + DateTime.Now);
@@ -34,7 +34,7 @@ namespace ConsumerTest
     /// </summary>
     public class OrderHandler2 : BaseMessageHandler<Order>
     {
-        protected override bool DoHandle(Message<Order> message)
+        public override bool Handle(Order message, bool redelivered)
         {
             // 不需要做任何try...catch处理，库内部已经处理过了
             Console.WriteLine("我是sub2，接收到消息: " + message + "，时间：" + DateTime.Now);

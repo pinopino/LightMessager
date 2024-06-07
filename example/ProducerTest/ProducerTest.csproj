@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\LightMessager.csproj" />
+    <ProjectReference Include="..\..\src\LightMessager\LightMessager.csproj" />
   </ItemGroup>
 
   <ItemGroup>
