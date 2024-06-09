@@ -1,0 +1,62 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32519.379
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{C10C8C5D-B587-4070-8BD4-02AE6346038B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ConsumerTest", "example\ConsumerTest\ConsumerTest.csproj", "{D8BB0BA5-5CA4-407E-9D79-4C0C58067E32}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProducerTest", "example\ProducerTest\ProducerTest.csproj", "{720DED31-83BC-474F-919D-00FC8269E34B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WebApplication1", "example\WebApplication1\WebApplication1.csproj", "{46F6F64A-C63A-492D-AA60-3F7B0AF6CEB5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LightMessager", "src\LightMessager\LightMessager.csproj", "{DB1E1476-BD5E-4B71-81C4-8DFA3E792DD3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LightMessager.Test", "test\LightMessager.Test\LightMessager.Test.csproj", "{65BFF64F-9CCF-4610-8383-66933BB6E367}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LightMessager.Tracker", "src\LightMessager.Tracker\LightMessager.Tracker.csproj", "{A36E585D-9718-4360-B535-09FB0986DA0E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D8BB0BA5-5CA4-407E-9D79-4C0C58067E32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8BB0BA5-5CA4-407E-9D79-4C0C58067E32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8BB0BA5-5CA4-407E-9D79-4C0C58067E32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8BB0BA5-5CA4-407E-9D79-4C0C58067E32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{720DED31-83BC-474F-919D-00FC8269E34B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{720DED31-83BC-474F-919D-00FC8269E34B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{720DED31-83BC-474F-919D-00FC8269E34B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{720DED31-83BC-474F-919D-00FC8269E34B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{46F6F64A-C63A-492D-AA60-3F7B0AF6CEB5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{46F6F64A-C63A-492D-AA60-3F7B0AF6CEB5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{46F6F64A-C63A-492D-AA60-3F7B0AF6CEB5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{46F6F64A-C63A-492D-AA60-3F7B0AF6CEB5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DB1E1476-BD5E-4B71-81C4-8DFA3E792DD3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DB1E1476-BD5E-4B71-81C4-8DFA3E792DD3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DB1E1476-BD5E-4B71-81C4-8DFA3E792DD3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DB1E1476-BD5E-4B71-81C4-8DFA3E792DD3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{65BFF64F-9CCF-4610-8383-66933BB6E367}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{65BFF64F-9CCF-4610-8383-66933BB6E367}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{65BFF64F-9CCF-4610-8383-66933BB6E367}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{65BFF64F-9CCF-4610-8383-66933BB6E367}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A36E585D-9718-4360-B535-09FB0986DA0E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A36E585D-9718-4360-B535-09FB0986DA0E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A36E585D-9718-4360-B535-09FB0986DA0E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A36E585D-9718-4360-B535-09FB0986DA0E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D8BB0BA5-5CA4-407E-9D79-4C0C58067E32} = {C10C8C5D-B587-4070-8BD4-02AE6346038B}
+		{720DED31-83BC-474F-919D-00FC8269E34B} = {C10C8C5D-B587-4070-8BD4-02AE6346038B}
+		{46F6F64A-C63A-492D-AA60-3F7B0AF6CEB5} = {C10C8C5D-B587-4070-8BD4-02AE6346038B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0D443731-5724-4981-AFDB-CFDB9FA93527}
+	EndGlobalSection
+EndGlobal
